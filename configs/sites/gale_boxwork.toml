@@ -1,0 +1,72 @@
+# Site config: Gale crater / Mount Sharp boxwork (Curiosity 2025 campaign).
+# One file per site. Adding a new site = copy this file and change the products and bbox.
+
+[site]
+id = "gale_boxwork"
+name = "Gale crater / Mount Sharp boxwork"
+stops_file = "data/sites/gale_boxwork/stops.json"
+# Analysis window (deg). Covers H1..S5 plus margin for routing.
+bbox = { lat_min = -4.8130, lat_max = -4.7880, lon_min = 137.355, lon_max = 137.405 }
+
+[body]
+radius_m = 3396190.0          # Mars 2000 sphere used by HiRISE/THEMIS products
+gravity_mps2 = 3.71
+
+# --- Topographic -----------------------------------------------------------
+[products.dtm]
+id = "DTEEC_019698_1750_019988_1750_U01"
+url = "https://hirise-pds.lpl.arizona.edu/PDS/DTM/ESP/ORB_019600_019699/ESP_019698_1750_ESP_019988_1750/DTEEC_019698_1750_019988_1750_U01.IMG"
+format = "pds_img"            # GDAL "PDS" driver reads it remotely via /vsicurl/
+# Grid as GDAL reports it (verified 2026-11-13). Runtime code reads these from the file itself;
+# they are copied here so tests and offline tools can build the grid without network access.
+crs = "+proj=eqc +lat_ts=0 +lat_0=0 +lon_0=137.38 +x_0=0 +y_0=0 +R=3396190 +units=m +no_defs"
+transform = [1.0117467945795, 0.0, -4018.6582680699767, 0.0, -1.0117467945795, -280315.578653001]
+width = 7426
+height = 18270
+
+[products.dtm_crosscheck]
+id = "DTEEC_009149_1750_009294_1750_U01"
+url = "https://hirise-pds.lpl.arizona.edu/PDS/DTM/PSP/ORB_009100_009199/PSP_009149_1750_PSP_009294_1750/DTEEC_009149_1750_009294_1750_U01.IMG"
+format = "pds_img"
+
+# --- Optical ---------------------------------------------------------------
+[products.ortho_1m]
+id = "ESP_019698_1750_RED_C_01_ORTHO"
+url = "https://hirise-pds.lpl.arizona.edu/PDS/DTM/ESP/ORB_019600_019699/ESP_019698_1750_ESP_019988_1750/ESP_019698_1750_RED_C_01_ORTHO.JP2"
+format = "jp2"
+# The PDS label has the same projection offsets as the DTM, but the JP2's embedded GeoJP2 header is
+# shifted by 1.5 px (verified 2026-11-13). Use the DTM grid, not the JP2's own transform.
+same_grid_as = "dtm"
+
+[products.ortho_25cm]
+id = "ESP_019698_1750_RED_A_01_ORTHO"
+url = "https://hirise-pds.lpl.arizona.edu/PDS/DTM/ESP/ORB_019600_019699/ESP_019698_1750_ESP_019988_1750/ESP_019698_1750_RED_A_01_ORTHO.JP2"
+format = "jp2"
+optional = true               # 462 MB; for boulder detection later
+
+[products.ortho_color_1m]
+id = "ESP_019698_1750_IRB_C_01_ORTHO"
+url = "https://hirise-pds.lpl.arizona.edu/PDS/DTM/ESP/ORB_019600_019699/ESP_019698_1750_ESP_019988_1750/ESP_019698_1750_IRB_C_01_ORTHO.JP2"
+format = "jp2"
+optional = true               # covers S2 only
+
+[products.basemap_tiles]
+# Mars Trek WMTS, geographic tiling: works with Leaflet L.CRS.EPSG4326. z0-16 (0.64 m/px at z16).
+url_template = "https://trek.nasa.gov/tiles/Mars/EQ/curiosity_hirise_mosaic/1.0.0/default/default028mm/{z}/{y}/{x}.png"
+max_zoom = 16
+
+# --- Thermal ---------------------------------------------------------------
+[products.thermal_inertia]
+id = "THEMIS_TI_Mosaic_Quant_30S120E_100mpp"
+url = "https://asc-astropedia.s3.us-west-2.amazonaws.com/Mars/Odyssey/THEMIS-Global-Thermal-Inertia-Mosaic/Quantitative-32-Bit/THEMIS_TI_Mosaic_Quant_30S120E_100mpp.cub"
+format = "isis3"              # GDAL "ISIS3" driver; tiled, so a bbox window reads one 128x128 tile
+crs = "+proj=eqc +lat_ts=0 +lat_0=0 +lon_0=0 +x_0=0 +y_0=0 +R=3396190 +units=m +no_defs"
+sand_ti_threshold = 300.0     # TI below this => flag as likely loose sand (regional context only)
+
+# --- Radiation / space weather --------------------------------------------
+[spaceweather]
+rad_gcr_dose_mgy_per_day = 0.21       # Hassler et al. 2014, Gale surface, GCR only (+/- 0.04)
+rad_dose_equivalent_msv_per_day = 0.67
+donki_base_url = "https://api.nasa.gov/DONKI"
+donki_max_range_days = 60
+api_key_env = "NASA_API_KEY"          # falls back to DEMO_KEY (rate-limited)

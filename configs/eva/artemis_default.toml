@@ -1,0 +1,43 @@
+# EVA limits and cost-model settings. Placeholder values modeled on Artemis planning; edit freely.
+
+[eva]
+max_duration_h = 8.0
+crew_size = 2                    # walk together (buddy system)
+walkback_reserve_frac = 0.30     # consumables that must remain for a straight walkback at every point
+max_distance_from_rover_m = 2000.0
+default_work_time_min = 30       # per stop, unless the stop sets its own
+time_margin_factor = 1.3         # BASALT lesson: real EVA time ran longer than SEXTANT predicted
+
+[suit]
+# Placeholders for consumables accounting (to be refined).
+o2_capacity_h = 8.0
+battery_capacity_wh = 1000.0
+metabolic_budget_kj = 12000.0
+
+[route]
+stop_order = "fixed"             # "fixed" | "optimize"  (optimize = brute force, only 5 stops)
+connectivity = 8                 # grid neighbors for A*
+grid_step_m = 1.0                # routing on the 1 m DTM; 5.0 for fast previews
+
+[hazards]
+max_slope_deg_5m = 25.0          # hard no-go at 5 m baseline
+max_slope_deg_1m = 35.0          # hard no-go at 1 m (ledges, ridge walls)
+max_roughness_m = 0.8            # hard no-go above this 1 m roughness
+
+[cost]
+model = "metabolic"              # "metabolic" | "weighted"
+
+[cost.metabolic]
+# SEXTANT-style: energy per metre walked as a function of grade, scaled to Mars gravity.
+gravity_mps2 = 3.71
+earth_gravity_mps2 = 9.81
+body_mass_kg = 80.0
+suit_mass_kg = 60.0
+roughness_penalty_per_m = 2.0    # multiplier on energy per 1 m of roughness
+sand_penalty = 1.2               # multiplier where TI < sand threshold
+
+[cost.weighted]
+w_distance = 1.0
+w_slope = 0.08                   # per degree
+w_roughness = 2.0                # per metre
+w_sand = 0.5

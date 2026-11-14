@@ -1,0 +1,67 @@
+{
+  "site": "gale_boxwork",
+  "source": "Curiosity (MSL) waypoint file at the listed sols; elevations from HiRISE DTEEC_019698_1750_019988_1750_U01 (approx +13-17 m vs rover elev_geoid)",
+  "crs": "Mars 2000 planetocentric, east-positive longitude, sphere R=3396190 m",
+  "start": {
+    "id": "H1",
+    "name": "EVA start / pressurized-rover parking",
+    "lat": -4.798777,
+    "lon": 137.385215,
+    "dtm_z_m": -3638.1,
+    "kind": "start",
+    "notes": "Flattest 100 m-radius patch within 1.5 km of S3 (mean 5 m slope 4.8 deg). Rover parking, not a lander pad."
+  },
+  "stops": [
+    {
+      "id": "S1",
+      "name": "Altadena drill site",
+      "sol": "~4565",
+      "lat": -4.799847,
+      "lon": 137.383541,
+      "dtm_z_m": -3630.1,
+      "science": "First drill entering the boxwork unit (Jun 2025): baseline bedrock chemistry",
+      "work_time_min": 30,
+      "notes": "approx: sol estimated from drill date, nearest waypoint sol 4560"
+    },
+    {
+      "id": "S2",
+      "name": "First boxwork ridge stop",
+      "sol": "4627",
+      "lat": -4.805859,
+      "lon": 137.379758,
+      "dtm_z_m": -3605.6,
+      "science": "Ridge-top cement and veins: first close look at a ridge",
+      "work_time_min": 30
+    },
+    {
+      "id": "S3",
+      "name": "Monte Grande hollow + Nevado Sajama ridge",
+      "sol": "4687-4804",
+      "lat": -4.807839,
+      "lon": 137.381035,
+      "dtm_z_m": -3595.9,
+      "science": "Hollow (Valle de la Luna drill) vs ridge (Nevado Sajama 1 & 2) comparison; polygons in the hollow",
+      "work_time_min": 30
+    },
+    {
+      "id": "S4",
+      "name": "Final-phase hollow + branching ridge",
+      "sol": "~4823",
+      "lat": -4.807883,
+      "lon": 137.382628,
+      "dtm_z_m": -3603.7,
+      "science": "Hollow with exposed bedrock floor and a branching ridge network",
+      "work_time_min": 30
+    },
+    {
+      "id": "S5",
+      "name": "Boxwork upper contact",
+      "sol": "~4834",
+      "lat": -4.809543,
+      "lon": 137.382697,
+      "dtm_z_m": -3593.4,
+      "science": "Where the boxwork interval ends: stratigraphic context",
+      "work_time_min": 30
+    }
+  ]
+}

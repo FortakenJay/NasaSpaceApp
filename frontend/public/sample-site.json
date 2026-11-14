@@ -1,0 +1,73 @@
+{
+ "site": {
+  "id": "gale_boxwork",
+  "name": "Gale crater / Mount Sharp boxwork",
+  "bbox": {
+   "lat_min": -4.813,
+   "lat_max": -4.788,
+   "lon_min": 137.355,
+   "lon_max": 137.405
+  },
+  "radius_m": 3396190.0,
+  "basemap": {
+   "url_template": "https://trek.nasa.gov/tiles/Mars/EQ/curiosity_hirise_mosaic/1.0.0/default/default028mm/{z}/{y}/{x}.png",
+   "max_zoom": 16
+  }
+ },
+ "stops": [
+  {
+   "id": "H1",
+   "name": "EVA start / pressurized-rover parking",
+   "lat": -4.798777,
+   "lon": 137.385215,
+   "kind": "start",
+   "science": "",
+   "work_time_min": 0.0
+  },
+  {
+   "id": "S1",
+   "name": "Altadena drill site",
+   "lat": -4.799847,
+   "lon": 137.383541,
+   "kind": "stop",
+   "science": "First drill entering the boxwork unit (Jun 2025): baseline bedrock chemistry",
+   "work_time_min": 30
+  },
+  {
+   "id": "S2",
+   "name": "First boxwork ridge stop",
+   "lat": -4.805859,
+   "lon": 137.379758,
+   "kind": "stop",
+   "science": "Ridge-top cement and veins: first close look at a ridge",
+   "work_time_min": 30
+  },
+  {
+   "id": "S3",
+   "name": "Monte Grande hollow + Nevado Sajama ridge",
+   "lat": -4.807839,
+   "lon": 137.381035,
+   "kind": "stop",
+   "science": "Hollow (Valle de la Luna drill) vs ridge (Nevado Sajama 1 & 2) comparison; polygons in the hollow",
+   "work_time_min": 30
+  },
+  {
+   "id": "S4",
+   "name": "Final-phase hollow + branching ridge",
+   "lat": -4.807883,
+   "lon": 137.382628,
+   "kind": "stop",
+   "science": "Hollow with exposed bedrock floor and a branching ridge network",
+   "work_time_min": 30
+  },
+  {
+   "id": "S5",
+   "name": "Boxwork upper contact",
+   "lat": -4.809543,
+   "lon": 137.382697,
+   "kind": "stop",
+   "science": "Where the boxwork interval ends: stratigraphic context",
+   "work_time_min": 30
+  }
+ ]
+}

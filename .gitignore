@@ -1,0 +1,16 @@
+# Downloaded and derived rasters (re-create with `marswalk fetch` / `marswalk layers`)
+data/raw/
+data/cache/
+out/
+data/marswalk.db*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
