@@ -62,6 +62,16 @@ class GeoGrid:
         lon, lat = self._inv.transform(x, y)
         return lat, lon
 
+    def rc_to_latlon_many(self, rows, cols) -> tuple[np.ndarray, np.ndarray]:
+        """Vectorised rc_to_latlon (pixel centres). Returns (lats, lons)."""
+        rows = np.asarray(rows, dtype=np.float64) + 0.5
+        cols = np.asarray(cols, dtype=np.float64) + 0.5
+        t = self.transform
+        xs = t.a * cols + t.b * rows + t.c
+        ys = t.d * cols + t.e * rows + t.f
+        lons, lats = self._inv.transform(xs, ys)
+        return np.asarray(lats), np.asarray(lons)
+
     def window(self, row_off: int, col_off: int, height: int, width: int) -> "GeoGrid":
         return GeoGrid(self.transform @ Affine.translation(col_off, row_off), self.crs, height, width)
 

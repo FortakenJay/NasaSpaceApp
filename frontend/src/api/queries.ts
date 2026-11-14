@@ -2,12 +2,13 @@
 import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from './client';
 import * as api from './endpoints';
-import type { NewObservation, PlanRequest, SavePlanRequest } from './types';
+import type { NewObservation, NewStop, PlanRequest, SavePlanRequest, StopPatch } from './types';
 
 export const queryKeys = {
   site: ['site'] as const,
   layers: ['layers'] as const,
   status: ['status'] as const,
+  sources: ['sources'] as const,
   plans: ['plans'] as const,
   observations: (stopId: string) => ['observations', stopId] as const,
 };
@@ -39,6 +40,23 @@ export function useSpaceWeather(enabled: boolean) {
   return useQuery({ queryKey: queryKeys.status, queryFn: api.getStatus, enabled, staleTime: 5 * 60_000 });
 }
 
+/** How the server is using NASA's APIs (cache, saved requests, request budget). Follows the status check. */
+export function useSources(enabled: boolean) {
+  return useQuery({ queryKey: queryKeys.sources, queryFn: api.getSources, enabled, staleTime: 15_000 });
+}
+
+/** "Ask NASA again now": bypasses the cache and any back-off, then updates both panels. */
+export function useRefreshSources() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.refreshSources(),
+    onSuccess: (r) => {
+      qc.setQueryData(queryKeys.status, r.status);
+      qc.setQueryData(queryKeys.sources, r.sources);
+    },
+  });
+}
+
 /** Computing a plan stores it server-side (M4: POST /api/plan persists the result as a saved plan),
  *  so the saved-plans list is refreshed afterwards. */
 export function useComputePlan() {
@@ -58,6 +76,31 @@ export function useSavePlan() {
   return useMutation({
     mutationFn: (req: SavePlanRequest) => api.savePlan(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.plans }),
+  });
+}
+
+/** Stops the crew adds on the map are saved server-side; the site (and its stop list) is reloaded afterwards. */
+export function useAddStop() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (stop: NewStop) => api.addStop(stop),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.site }),
+  });
+}
+
+export function useUpdateStop() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: StopPatch) => api.updateStop(patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.site }),
+  });
+}
+
+export function useDeleteStop() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteStop(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.site }),
   });
 }
 

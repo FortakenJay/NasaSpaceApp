@@ -4,12 +4,17 @@ export { describeError } from './errors';
 export {
   createQueryClient,
   useAddObservation,
+  useAddStop,
   useComputePlan,
+  useDeleteStop,
   useLayers,
   useObservations,
+  useRefreshSources,
   usePlans,
   useSavePlan,
   useSite,
+  useSources,
   useSpaceWeather,
+  useUpdateStop,
 } from './queries';
 export type * from './types';

@@ -8,7 +8,7 @@ from marswalk.constraints.eva import check_distance_from_rover, check_duration
 from marswalk.cost import get_cost_model
 from marswalk.layers.stack import nogo_mask
 from marswalk.route.sequence import order_stops, tour_cost
-from marswalk.spaceweather.status import eva_dose_mgy, split_range
+from marswalk.spaceweather.status import eva_dose_mgy, go_no_go, mars_arrivals, parse_time, split_range
 
 EVA = load_eva("configs/eva/artemis_default.toml")
 
@@ -59,3 +59,24 @@ def test_cost_models_switchable(name):
 def test_unknown_cost_model():
     with pytest.raises(ValueError):
         get_cost_model("teleport", {})
+
+
+def test_go_no_go_rules():
+    now = dt.datetime(2026, 11, 14, 12, 0, tzinfo=dt.timezone.utc)
+    iso = lambda hours: (now + dt.timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%MZ")   # noqa: E731
+    sim = lambda hours, glancing: {"impactList": [{"location": "Mars", "arrivalTime": iso(hours), "isGlancingBlow": glancing}]}  # noqa: E731
+    assert parse_time("2024-09-04T14:00Z") == dt.datetime(2024, 9, 4, 14, 0, tzinfo=dt.timezone.utc)
+    assert parse_time("") is None and parse_time("nonsense") is None
+    assert go_no_go([], now, 8, 0.21).level == "GO"
+    assert go_no_go([{"eventTime": iso(-30)}], now, 8, 0.21).level == "NO-GO"            # SEP in the last 48 h
+    assert go_no_go([{"eventTime": iso(-100)}], now, 8, 0.21).level == "CAUTION"         # SEP in the last 7 days
+    assert go_no_go([{"eventTime": iso(-300)}], now, 8, 0.21).level == "GO"              # older than 7 days
+    assert go_no_go([], now, 8, 0.21, simulations=[sim(20, False)]).level == "NO-GO"     # direct hit in the window
+    assert go_no_go([], now, 8, 0.21, simulations=[sim(20, True)]).level == "CAUTION"    # glancing blow
+    assert go_no_go([], now, 8, 0.21, simulations=[sim(100, False)]).level == "CAUTION"  # arrival later this week
+    assert go_no_go([], now, 8, 0.21, simulations=[sim(-200, False)]).level == "GO"      # long past
+    assert go_no_go([], now, 8, 0.21, flares=[{"classType": "X1.2", "peakTime": iso(-5)}]).level == "CAUTION"
+    assert go_no_go([], now, 8, 0.21, flares=[{"classType": "M9.9", "peakTime": iso(-5)}]).strongest_flare == "M9.9"
+    assert go_no_go([], now, 8, 0.21, data_ok=False).level == "CAUTION"
+    earth_only = [{"impactList": [{"location": "STEREO A", "arrivalTime": iso(5), "isGlancingBlow": False}]}]
+    assert mars_arrivals(earth_only, now) == [] and go_no_go([], now, 8, 0.21, simulations=earth_only).level == "GO"

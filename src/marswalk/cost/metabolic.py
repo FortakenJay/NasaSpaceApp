@@ -1,34 +1,38 @@
 """SEXTANT-style metabolic cost for a suited walker, scaled to Mars gravity.
 
-TODO(M3). Design:
-- Energy per metre E(grade) from a walking-on-slope metabolic model. Candidates to evaluate:
-  the model SEXTANT used (MIT/NASA, BASALT) and the suited data in Kluis et al. 2022.
-  Pick one, cite it in docs/ARCHITECTURE.md, and keep the formula in `kernel`.
-- Gravity scaling: load-dependent terms scale with g_mars / g_earth (3.71 / 9.81); suit mass is
-  added to body mass.
-- Grade = dz_m / run_m (signed). Multipliers: (1 + roughness_penalty_per_m * rough_m), and
-  sand_penalty when sand = 1.
-- time_s from the shared speed(grade) helper, the same one the weighted model uses.
-- min_rate = min over grades of E(grade), so the A* heuristic stays admissible.
+Route cost = metabolic energy (kJ). The walking model lives in cost.physics (speed vs grade, Santee-form
+metabolic power, gravity scaling, roughness and sand multipliers) and is shared with the weighted model.
+params = the 7-value physics block (cost.physics.PHYSICS_ORDER).
 """
 from __future__ import annotations
 
+import numba
 import numpy as np
 
-PARAM_ORDER = ("gravity_mps2", "earth_gravity_mps2", "body_mass_kg", "suit_mass_kg",
-               "roughness_penalty_per_m", "sand_penalty")
+from marswalk.cost import physics as ph
+
+PARAM_ORDER = ph.PHYSICS_ORDER
 
 
-def kernel(params, dz_m, run_m, slope5_deg, rough_m, sand):  # becomes @numba.njit in M3
-    raise NotImplementedError("M3: metabolic edge kernel")
+@numba.njit(cache=True)
+def kernel(params, dz_m, run_m, slope5_deg, rough_m, sand):
+    t, e = ph.edge_time_energy(params[0], params[1], params[2] + params[3], params[4], params[5], params[6],
+                               dz_m, run_m, rough_m, sand)
+    return e, t, e
 
 
 class MetabolicCostModel:
     name = "metabolic"
+    unit = "kJ"
 
-    def __init__(self, cfg: dict):
-        self.params = np.array([float(cfg[k]) for k in PARAM_ORDER], dtype=np.float64)
+    def __init__(self, cfg: dict, physics: dict | None = None):
+        self.params = np.array(ph.physics_params({**(physics or {}), **cfg}), dtype=np.float64)
         self.kernel = kernel
 
     def min_rate(self) -> float:
-        raise NotImplementedError("M3: metabolic min_rate")
+        """Cheapest energy per horizontal metre over all walkable grades (admissible A* heuristic)."""
+        best = np.inf
+        for grade in np.arange(-self.params[ph.MAX_GRADE], self.params[ph.MAX_GRADE] + 0.01, 0.25):
+            c, _, _ = kernel(self.params, float(np.tan(np.radians(grade))), 1.0, 0.0, 0.0, 0.0)
+            best = min(best, c)
+        return float(best)

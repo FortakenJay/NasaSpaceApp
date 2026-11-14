@@ -10,10 +10,7 @@ export function StopLog({ stop, live }: { stop: Stop; live: boolean }) {
   const [sampleId, setSampleId] = useState('');
 
   return (
-    <section>
-      <h2>
-        Field log · {stop.id} {stop.name}
-      </h2>
+    <div className="field-log">
       {!live && <p className="note">The field log needs the API.</p>}
       {live && (
         <form
@@ -34,7 +31,7 @@ export function StopLog({ stop, live }: { stop: Stop; live: boolean }) {
         >
           <textarea
             aria-label="Observation"
-            placeholder="Observation"
+            placeholder="What did you see here?"
             rows={2}
             maxLength={4000}
             value={note}
@@ -49,25 +46,25 @@ export function StopLog({ stop, live }: { stop: Stop; live: boolean }) {
               onChange={(e) => setSampleId(e.target.value)}
             />
             <button type="submit" disabled={add.isPending || !note.trim()}>
-              Log
+              Save note
             </button>
           </div>
           {add.isError && <p className="note">{describeError(add.error, 'Logging')}</p>}
         </form>
       )}
       {log.isError && <p className="note">{describeError(log.error, 'Field log')}</p>}
-      {log.data?.length === 0 && <p className="note">No observations yet.</p>}
+      {log.data?.length === 0 && <p className="note">No notes for this stop yet.</p>}
       <ul className="log">
         {log.data?.map((o) => (
           <li key={o.id}>
             <small>
-              {new Date(o.created_at).toLocaleString()} · {o.author}
-              {o.sample_id ? ` · sample ${o.sample_id}` : ''}
+              {new Date(o.created_at).toLocaleString()}, {o.author}
+              {o.sample_id ? `, sample ${o.sample_id}` : ''}
             </small>
             <p>{o.note}</p>
           </li>
         ))}
       </ul>
-    </section>
+    </div>
   );
 }

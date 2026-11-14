@@ -38,7 +38,7 @@ class Stop(Base):
     site_id: Mapped[str] = mapped_column(ForeignKey("sites.id"))
     code: Mapped[str] = mapped_column(String(16))          # "H1", "S1", ...
     seq: Mapped[int] = mapped_column(Integer)              # visiting order in the science plan (start = 0)
-    kind: Mapped[str] = mapped_column(String(8))           # "start" | "stop"
+    kind: Mapped[str] = mapped_column(String(8))           # "start" | "stop" | "user" (added on the map)
     name: Mapped[str] = mapped_column(String(200))
     lat: Mapped[float] = mapped_column(Float)
     lon: Mapped[float] = mapped_column(Float)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "marswalk"
-version = "0.2.0"
+version = "0.8.0"
 description = "Suited-astronaut traverse planner for Mars EVAs (Gale / Mount Sharp boxwork baseline)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,6 +13,7 @@ dependencies = [
   "scipy>=1.13",
   "scikit-image>=0.24",
   "matplotlib>=3.9",
+  "pillow>=10",          # overlay PNG encoding
   "rasterio>=1.4",       # GDAL: PDS IMG, ISIS3 cubes, JP2, /vsicurl/ windowed reads, reprojection
   "pyproj>=3.6",         # Mars CRS transforms
   "numba>=0.61",         # compiled A* and edge-cost kernels

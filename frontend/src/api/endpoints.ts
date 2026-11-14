@@ -3,6 +3,7 @@ import { OfflineError, request, staticJson } from './client';
 import type {
   LayerInfo,
   NewObservation,
+  NewStop,
   Observation,
   PlanRequest,
   PlanResult,
@@ -10,7 +11,10 @@ import type {
   SavedPlan,
   SiteData,
   SitePayload,
+  SourcesInfo,
   SpaceWeatherStatus,
+  Stop,
+  StopPatch,
 } from './types';
 
 const enc = encodeURIComponent;
@@ -27,10 +31,18 @@ export async function getSite(): Promise<SiteData> {
 
 export const getLayers = () => request<LayerInfo[]>('/api/layers');
 export const getStatus = () => request<SpaceWeatherStatus>('/api/status');
+export const getSources = () => request<SourcesInfo>('/api/sources');
+export const refreshSources = () =>
+  request<{ status: SpaceWeatherStatus; sources: SourcesInfo }>('/api/sources/refresh', { method: 'POST' });
 export const computePlan = (req: PlanRequest) => request<PlanResult>('/api/plan', { method: 'POST', json: req });
 
 export const listPlans = () => request<SavedPlan[]>('/api/plans');
 export const savePlan = (req: SavePlanRequest) => request<SavedPlan>('/api/plans', { method: 'POST', json: req });
+
+export const addStop = (stop: NewStop) => request<Stop>('/api/stops', { method: 'POST', json: stop });
+export const updateStop = ({ id, ...patch }: StopPatch) =>
+  request<Stop>(`/api/stops/${enc(id)}`, { method: 'PATCH', json: patch });
+export const deleteStop = (id: string) => request<{ deleted: string }>(`/api/stops/${enc(id)}`, { method: 'DELETE' });
 
 export const listObservations = (stopId: string) => request<Observation[]>(`/api/stops/${enc(stopId)}/observations`);
 export const addObservation = (stopId: string, obs: NewObservation) =>
