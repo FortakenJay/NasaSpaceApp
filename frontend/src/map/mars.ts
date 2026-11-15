@@ -19,27 +19,28 @@ export const MARS_GEOGRAPHIC = new Projection({
   worldExtent: [-180, -90, 180, 90],
   global: true,
   metersPerUnit: METERS_PER_DEGREE,
-  // Ground distance per pixel in projection units (degrees). Latitude spacing is constant; this
-  // ignores the cos(lat) shrink of longitude, which is 0.4% at Gale (-4.8 deg).
+  // Ground distance per pixel in projection units (degrees), measured north-south: a degree of latitude is the same
+  // length everywhere, so the scale bar is right at any Base (east-west, a degree shrinks by cos(lat)).
   getPointResolution: (resolution: number) => resolution,
 });
 addProjection(MARS_GEOGRAPHIC);
 
-const TILE = 256;
-
-/** Tile grid for Mars Trek WMTS "default028mm" geographic tiling: z0 = 2x1 tiles of 180 degrees. */
-export function trekTileGrid(maxZoom: number): TileGrid {
-  const resolutions = Array.from({ length: maxZoom + 1 }, (_, z) => 180 / TILE / 2 ** z);
-  return new TileGrid({ origin: [-180, 90], extent: [-180, -90, 180, 90], resolutions, tileSize: TILE });
+/** Geographic tile grid: z0 = 2x1 tiles of 180 degrees. Mars Trek tiles are 256 px; the global astro.arcgis
+ * HiRISE and CTX mosaics use the same tiles at 512 px (checked from their MapServer tileInfo). */
+export function trekTileGrid(maxZoom: number, tileSize = 256): TileGrid {
+  const resolutions = Array.from({ length: maxZoom + 1 }, (_, z) => 180 / tileSize / 2 ** z);
+  return new TileGrid({ origin: [-180, 90], extent: [-180, -90, 180, 90], resolutions, tileSize });
 }
 
-/** XYZ source for a Mars Trek layer. `urlTemplate` uses {z}/{y}/{x}. */
-export function trekSource(urlTemplate: string, maxZoom: number): XYZ {
+/** XYZ source for a geographic tile layer. `urlTemplate` uses {z}/{y}/{x}. */
+export function trekSource(urlTemplate: string, maxZoom: number, tileSize = 256): XYZ {
   return new XYZ({
     url: urlTemplate,
     projection: MARS_GEOGRAPHIC,
-    tileGrid: trekTileGrid(maxZoom),
+    tileGrid: trekTileGrid(maxZoom, tileSize),
+    tileSize,
     wrapX: false,
-    attributions: 'Imagery via NASA/JPL Mars Trek (HiRISE, CTX, THEMIS). Terrain: HiRISE DTM, NASA/JPL/UArizona',
+    attributions: 'Imagery: NASA/JPL/University of Arizona (HiRISE), MSSS (CTX), ASU (THEMIS) via Mars Trek and USGS/Esri. ' +
+      'Terrain: HiRISE DTM.',
   });
 }

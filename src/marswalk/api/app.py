@@ -23,6 +23,17 @@ routes reach the database ONLY through marswalk.db.repo.
     GET  /api/eink.png|.bin?...&lat&lon...   -> suit display; live position, walked_m, energy_kj, visited
     GET  /api/sources                        -> external API use: per-feed state, cache savings, request budget
     POST /api/sources/refresh                -> ask NASA again now (ignores cache and back-off)
+    GET  /api/bases                          -> {focused, bases: [...], job}: every Base (Gale built in)
+    POST /api/bases {lat, lon, name?, product_id?} -> 202: start downloading a new Base (one job at a time)
+    GET  /api/bases/job                      -> the running or last job: steps, fraction, error
+    POST /api/bases/{id}/cancel | /resume    -> stop the download / restart an interrupted or failed one
+    POST /api/bases/focus {id}               -> make a ready Base the one the planner works on
+    DELETE /api/bases/{id}                   -> delete a Base, its data and its database rows (403 for Gale)
+    GET  /api/catalog/footprints             -> every HiRISE stereo DTM footprint (GeoJSON, gzip)
+    GET  /api/catalog/lookup?lat&lon         -> what a Base there would use: terrain, window, size, warnings
+
+Every route works on the focused Base. Its caches live on one Focus object that is replaced when the focus moves,
+so nothing computed for one Base is served for another.
 
 Terrain routes answer 409 until `marswalk fetch` has cached the DTM. Stages that aren't built yet answer
 501 {"milestone": "Mx", "detail": ...}.
@@ -107,6 +118,17 @@ class AskIn(BaseModel):
     visited: list[str] | None = None
 
 
+class BaseIn(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-360, le=360)
+    name: str = Field(default="", max_length=100)
+    product_id: str | None = Field(default=None, max_length=80)
+
+
+class FocusIn(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+
+
 class ObservationIn(BaseModel):
     note: str = Field(min_length=1, max_length=4000)
     author: str = Field(default="crew", min_length=1, max_length=100)
@@ -128,14 +150,36 @@ DB = Annotated[Session, Depends(get_session)]
 def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_url: str = DEFAULT_URL,
                warm: bool = False) -> FastAPI:
     load_dotenv()
-    site: SiteConfig = load_site(site_path)
+    builtin: SiteConfig = load_site(site_path)
     eva: EVAConfig = load_eva(eva_path)
     app = FastAPI(title="MarsWalk Traverse Planner API", version=__version__)
     app.state.sessions = make_session_factory(make_engine(db_url))
     with app.state.sessions() as s:
-        repo.seed_site(s, site)
+        repo.seed_site(s, builtin)
     app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
                        allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["*"])
+
+    # --- Bases: one focused at a time; its caches live on its Focus object and go when the focus moves ----------------
+    from marswalk.bases.jobs import Busy, JobRunner
+    from marswalk.bases.registry import BaseRegistry
+
+    class Focus:
+        def __init__(self, site: SiteConfig):
+            self.site = site
+            self.fields: dict[tuple, object] = {}     # walk-home fields, radio, off-limits certainty
+            self.sim_cache: dict = {}                 # simulator packages
+
+    registry = BaseRegistry(builtin, app.state.sessions)
+    registry.startup()
+    try:
+        focus = {"b": Focus(registry.site(registry.focused_id()))}
+    except Exception:  # noqa: BLE001 - a broken Base falls back to the built-in one
+        focus = {"b": Focus(builtin)}
+    runner = JobRunner(registry, eva)
+    app.state.registry, app.state.runner = registry, runner
+
+    def F() -> Focus:
+        return focus["b"]
 
     @app.exception_handler(repo.NotFound)
     def _not_found(_: Request, exc: repo.NotFound):
@@ -147,11 +191,13 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
     @app.get("/api/health")
     def health():
+        site = F().site
         return {"ok": True, "version": __version__, "site": site.id, "project_root": str(PROJECT_ROOT)}
 
     # --- site & stops (DB) ------------------------------------------------------------------------
     @app.get("/api/site")
     def get_site(db: DB):
+        site = F().site
         from marswalk.route.plan import usable_budgets
         limits = {"usable_h": round(usable_budgets(eva)["time_s"] / 3600.0, 2),
                   "max_duration_h": float(eva.eva["max_duration_h"]),
@@ -164,6 +210,7 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
     def _ground(lat: float, lon: float) -> float | None:
         """Elevation at a point the crew wants to stop at. 422 if the spot is off the mapped terrain or
         off limits; None if the terrain is not fetched yet (the stop is then saved unchecked)."""
+        site = F().site
         from marswalk.layers.stack import build_stack
         from marswalk.route.astar import snap
         try:
@@ -179,12 +226,14 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
     @app.post("/api/stops", status_code=201)
     def add_stop(body: StopIn, db: DB):
+        site = F().site
         work = body.work_time_min if body.work_time_min is not None else float(eva.eva.get("default_work_time_min", 0))
         return repo.add_stop(db, site.id, lat=body.lat, lon=body.lon, name=body.name.strip(), work_time_min=work,
                              dtm_z_m=_ground(body.lat, body.lon))
 
     @app.patch("/api/stops/{stop_id}")
     def update_stop(stop_id: str, body: StopPatch, db: DB):
+        site = F().site
         moved = body.lat is not None and body.lon is not None
         return repo.update_stop(db, site.id, stop_id, lat=body.lat if moved else None, lon=body.lon if moved else None,
                                 name=(body.name or "").strip() or None, work_time_min=body.work_time_min,
@@ -192,25 +241,30 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
     @app.delete("/api/stops/{stop_id}")
     def delete_stop(stop_id: str, db: DB):
+        site = F().site
         repo.delete_stop(db, site.id, stop_id)
         return {"deleted": stop_id}
 
     @app.get("/api/stops/{stop_id}/observations")
     def list_observations(stop_id: str, db: DB):
+        site = F().site
         return repo.list_observations(db, site.id, stop_id)
 
     @app.post("/api/stops/{stop_id}/observations", status_code=201)
     def add_observation(stop_id: str, body: ObservationIn, db: DB):
+        site = F().site
         return repo.add_observation(db, site.id, stop_id, note=body.note.strip(), author=body.author.strip(),
                                     sample_id=(body.sample_id or "").strip() or None)
 
     # --- saved plans (DB) -------------------------------------------------------------------------
     @app.get("/api/plans")
     def list_plans(db: DB):
+        site = F().site
         return repo.list_plans(db, site.id)
 
     @app.post("/api/plans", status_code=201)
     def save_plan(body: SavePlanRequest, db: DB):
+        site = F().site
         return repo.create_plan(db, site.id, cost_model=body.cost, stop_order=body.order,
                                 stop_ids=body.stop_ids, name=body.name.strip())
 
@@ -220,10 +274,10 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
     # --- terrain pipeline -------------------------------------------------------------------------
     lock = threading.RLock()
-    fields: dict[tuple, object] = {}
 
     def terrain():
         """The LayerStack, or 409 when `marswalk fetch` has not cached the DTM yet."""
+        site = F().site
         from marswalk.layers.stack import build_stack
         try:
             with lock:
@@ -233,6 +287,8 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
     def walkback(stack, cost: str):
         """Reverse cost field from the rover for one cost model (cached; a few seconds on first use)."""
+        site = F().site
+        fields = F().fields
         from marswalk.route.astar import snap
         from marswalk.route.plan import walkback_field
         key = (id(stack), cost)
@@ -248,6 +304,8 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
     def radio(stack):
         """Radio line of sight to the rover over the walk range (cached; under a second)."""
+        site = F().site
+        fields = F().fields
         from marswalk.route.astar import snap
         from marswalk.route.plan import radio_field
         key = (id(stack), "radio")
@@ -263,6 +321,8 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
     def uncertain(stack):
         """(off-limits frequency, window) over the walk area from perturbed terrain (cached; about 2 s)."""
+        site = F().site
+        fields = F().fields
         from marswalk.layers import uncertainty
         key = (id(stack), "uncertain")
         with lock:
@@ -273,6 +333,7 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
     @app.post("/api/plan")
     def compute_plan(req: PlanRequest, db: DB):
+        site = F().site
         from marswalk.config import Stop
         from marswalk.route.plan import PlanError, build_plan
         stack = terrain()
@@ -330,6 +391,7 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
     @app.get("/api/layers")
     def list_layers():
+        site = F().site
         from marswalk.layers import render
         try:
             stack = terrain()
@@ -346,10 +408,14 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
                        "note": (f"The off-limits test rerun on {int((site.dtm.get('uncertainty') or {}).get('draws', 20))} "
                                 f"versions of the terrain, each within its {sigma:g} m stereo precision. Amber: off limits "
                                 "in some versions only, so the map cannot be sure; red: in nearly all. Walk area only.")})
-        return layers
+        # The Base and the data version go in every URL, so the browser never shows another Base's cached image.
+        from marswalk.layers.stack import raw_stamp
+        tag = f"b={site.id}&v={raw_stamp(site)}"
+        return [{**ly, "url": f"{ly['url']}{'&' if '?' in ly['url'] else '?'}{tag}"} for ly in layers]
 
     @app.get("/api/layers/{name}.png")
     def get_layer(name: str, elapsed_h: float = 0.0, cost: CostName | None = None):
+        site = F().site
         from marswalk.layers import render
         from marswalk.layers.stack import raw_stamp
         from marswalk.sources.fetch import cache_dir
@@ -377,7 +443,7 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
         return Response(png.read_bytes(), media_type="image/png", headers={"Cache-Control": "max-age=300"})
 
     # --- external APIs (all through sources.api_client.ApiClient) -----------------------------------
-    key_env = site.spaceweather.get("api_key_env", "NASA_API_KEY")
+    key_env = builtin.spaceweather.get("api_key_env", "NASA_API_KEY")
 
     def _api_key() -> str:
         return os.environ.get(key_env) or "DEMO_KEY"
@@ -388,6 +454,7 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
         return get_client(data_root() / "cache" / "api")
 
     def _status(force: bool = False) -> dict:
+        site = F().site
         from marswalk.spaceweather.status import current_status
         st = current_status(site.spaceweather, float(eva.eva["max_duration_h"]), _api_key(), client=_client(), force=force)
         return {**st.as_dict(), "eva_duration_h": float(eva.eva["max_duration_h"]),
@@ -420,6 +487,7 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
     def ask(body: AskIn, db: DB):
         """A question in plain words ("how far is S3 from here?", "how much oxygen?"), answered from the plan on screen,
         the terrain and the space-weather check. Returns the answer as text, as text for speech, and map highlights."""
+        site = F().site
         from marswalk.ask import AskContext, answer
         plan, cost = None, eva.cost_model
         if body.plan_id:
@@ -442,9 +510,9 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
         return answer(body.question, ctx)
 
     # --- 3-D walk simulator ---------------------------------------------------------------------------
-    sim_cache: dict = {}
 
     def _sim_points(db) -> tuple[tuple[float, float], list[tuple[float, float]]]:
+        site = F().site
         stops = repo.list_stops(db, site.id)
         start = next(s for s in stops if s["kind"] == "start")
         return (start["lat"], start["lon"]), [(s["lat"], s["lon"]) for s in stops if s["kind"] != "start"]
@@ -452,6 +520,8 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
     @app.get("/api/sim/terrain")
     def sim_terrain(db: DB, step: int = Query(3, ge=1, le=10)):
         """The walk area as a height grid in local metres around the rover (x east, z south), for the simulator."""
+        site = F().site
+        sim_cache = F().sim_cache
         from marswalk import sim
         from marswalk.layers.stack import raw_stamp
         stack = terrain()
@@ -464,6 +534,8 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
     @app.get("/api/sim/terrain.bin")
     def sim_terrain_bin(db: DB, step: int = Query(3, ge=1, le=10), v: str = ""):
         """The 3 m mesh's heights and off-limits bits (layout and frame in /api/sim/terrain). Sent gzip-compressed."""
+        site = F().site
+        sim_cache = F().sim_cache
         import gzip
 
         from marswalk import sim
@@ -480,6 +552,8 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
     def sim_fine(db: DB, v: str = ""):
         """The 1 m walking grid (walk surface, terrain, roughness, sand, off-limits, radio shadow) the simulator's
         physics reads; layout in /api/sim/terrain -> fine. Sent gzip-compressed."""
+        site = F().site
+        sim_cache = F().sim_cache
         import gzip
 
         from marswalk import sim
@@ -512,6 +586,8 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
     @app.get("/api/sim/texture.png")
     def sim_texture(db: DB, kind: str = Query("photo", pattern="^(photo|hazard)$"), step: int = Query(3, ge=1, le=10)):
         """The simulator's ground texture: the HiRISE photo in Mars colours, or the off-limits overlay."""
+        site = F().site
+        sim_cache = F().sim_cache
         from marswalk import sim
         from marswalk.layers.stack import raw_stamp
         stack = terrain()
@@ -523,6 +599,7 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
     # --- suit display (e-ink) -----------------------------------------------------------------------
     def _eink(plan_id: str | None, elapsed_h: float, db, live: dict | None = None):
+        site = F().site
         from marswalk import eink
         if plan_id:
             try:
@@ -569,16 +646,139 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
         return Response(eink.to_bin(_eink(plan_id, elapsed_h, db, _live(lat, lon, walked_m, energy_kj, visited))), media_type="application/octet-stream",
                         headers={"Cache-Control": "no-store", "X-Width": str(eink.W), "X-Height": str(eink.H)})
 
-    if warm:
-        # Build the terrain stack and the walk-home field in the background, so the first click is not the slow one.
-        def _warm():
-            try:
-                stack = terrain()
-                radio(stack)
-                uncertain(stack)
-                walkback(stack, eva.cost_model)
-            except Exception:  # noqa: BLE001 - e.g. terrain not fetched yet; the routes report it when asked
-                pass
+    # Build the terrain stack and the walk-home field in the background, so the first click is not the slow one.
+    def _warm():
+        try:
+            stack = terrain()
+            radio(stack)
+            uncertain(stack)
+            walkback(stack, eva.cost_model)
+        except Exception:  # noqa: BLE001 - e.g. terrain not fetched yet; the routes report it when asked
+            pass
+
+    def start_warm() -> None:
         threading.Thread(target=_warm, name="marswalk-warmup", daemon=True).start()
+
+    if warm:
+        start_warm()
+
+    # --- Bases and the HiRISE catalog ---------------------------------------------------------------
+    def _focus(base_id: str) -> None:
+        with lock:
+            site = registry.set_focus(base_id)          # raises 404 / 403 (not ready)
+            focus["b"] = Focus(site)
+        if warm:
+            start_warm()
+
+    def _bases() -> dict:
+        out = registry.list()
+        for b in out:
+            if b.get("kind") == "user":
+                b["size_bytes"] = b.get("size_bytes") or registry.size_bytes(b["id"])
+        return {"focused": F().site.id, "bases": out, "job": runner.snapshot()}
+
+    def _catalog():
+        from marswalk.sources import catalog
+        try:
+            return catalog.ensure_index()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(503, f"The HiRISE terrain catalog could not be downloaded yet ({e}). Try again shortly.") from e
+
+    @app.get("/api/bases")
+    def list_bases():
+        return _bases()
+
+    @app.get("/api/bases/job")
+    def base_job():
+        return runner.snapshot()
+
+    @app.post("/api/bases", status_code=202)
+    def create_base(body: BaseIn):
+        import shutil
+
+        from marswalk.sources import catalog
+        from marswalk.sources.fetch import data_root
+        cands = catalog.choose(_catalog(), body.lat, body.lon)
+        if body.product_id:
+            cands = [c for c in cands if c.entry.product_id == body.product_id]
+        if not cands:
+            raise HTTPException(422, "No 1 m HiRISE stereo terrain covers this point. Click inside one of the outlined areas.")
+        need = catalog.estimate_bytes(catalog.base_bbox(body.lat, body.lon, cands[0].entry), cands[0].entry.scale_m)
+        root = data_root()
+        root.mkdir(parents=True, exist_ok=True)
+        free = shutil.disk_usage(root).free
+        if free < 2 * need + 1_000_000_000:
+            raise HTTPException(507, f"Not enough free disk space: this Base needs about {need / 1e9:.1f} GB "
+                                     f"and {free / 1e9:.1f} GB is free (keeping 1 GB spare).")
+        try:
+            return runner.start(body.lat, body.lon, body.name, cands[0].entry.product_id)
+        except Busy as e:
+            raise HTTPException(409, str(e)) from e
+
+    @app.post("/api/bases/{base_id}/cancel")
+    def cancel_base(base_id: str):
+        return {"cancelled": runner.cancel(base_id)}
+
+    @app.post("/api/bases/{base_id}/resume", status_code=202)
+    def resume_base(base_id: str):
+        info = registry.info(base_id)
+        if info.get("status") not in ("interrupted", "failed"):
+            raise HTTPException(409, f"This Base is {info.get('status')}, nothing to resume.")
+        try:
+            return runner.start(info["lat"], info["lon"], resume_id=base_id)
+        except Busy as e:
+            raise HTTPException(409, str(e)) from e
+
+    @app.post("/api/bases/focus")
+    def focus_base(body: FocusIn):
+        _focus(body.id)
+        return _bases()
+
+    @app.delete("/api/bases/{base_id}")
+    def delete_base(base_id: str):
+        snap = runner.snapshot()
+        if runner.running() and snap and snap["base_id"] == base_id:
+            raise HTTPException(409, "This Base is still downloading. Cancel it first.")
+        was_focused = F().site.id == base_id
+        registry.delete(base_id)                      # 403 for the built-in Base, 404 if unknown
+        runner.forget(base_id)
+        if was_focused:
+            _focus(builtin.id)
+        return _bases()
+
+    @app.get("/api/catalog/footprints")
+    def footprints():
+        """Every HiRISE stereo DTM footprint (GeoJSON, gzip), with whether a Base can be set there."""
+        import gzip
+        import json as _json
+
+        from marswalk.sources import catalog
+        body = gzip.compress(_json.dumps(catalog.footprints_geojson(_catalog()), separators=(",", ":")).encode(), 6)
+        return Response(body, media_type="application/json",
+                        headers={"Content-Encoding": "gzip", "Cache-Control": "max-age=86400"})
+
+    @app.get("/api/catalog/lookup")
+    def catalog_lookup(lat: float = Query(ge=-90, le=90), lon: float = Query(ge=-360, le=360)):
+        """What a Base at (lat, lon) would use: the terrain, its window, the download size and what is missing."""
+        import shutil
+
+        from marswalk.sources import catalog
+        from marswalk.sources.fetch import data_root
+        cands = catalog.choose(_catalog(), lat, lon)
+        if not cands:
+            raise HTTPException(422, "No 1 m HiRISE stereo terrain covers this point. Click inside one of the outlined areas.")
+        best = cands[0].entry
+        bbox = catalog.base_bbox(lat, lon, best)
+        tile = catalog.ti_tile(lat, lon)
+        warnings = [] if tile else ["No thermal inertia here (THEMIS covers +-60 deg latitude): no sand flag."]
+        if cands[0].edge_m < 2000:
+            warnings.append(f"The stereo strip's edge is {cands[0].edge_m:.0f} m away, so part of the 2 km walk ring "
+                            "has no 1 m terrain.")
+        root = data_root()
+        return {"lat": lat, "lon": lon, "bbox": bbox, "ti_tile": tile, "warnings": warnings,
+                "est_bytes": catalog.estimate_bytes(bbox, best.scale_m),
+                "free_bytes": shutil.disk_usage(root if root.exists() else root.parent).free,
+                "candidates": [{"product_id": c.entry.product_id, "name": c.entry.rationale, "scale_m": c.entry.scale_m,
+                                "edge_m": round(c.edge_m)} for c in cands]}
 
     return app

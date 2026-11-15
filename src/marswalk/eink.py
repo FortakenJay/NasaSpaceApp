@@ -34,6 +34,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from marswalk.ask import hm, position_at
 from marswalk.geo import ground_distance_m
+from marswalk.spaceweather import radiation
 
 W, H = 800, 480
 BANNER_H = 112
@@ -148,7 +149,7 @@ def moment(plan: dict, site, eva, t_min: float, walk_home_min: float | None = No
     reserve_frac = float(eva.eva["walkback_reserve_frac"])
     o2_total = float(eva.suit.get("o2_capacity_h", eva.eva["max_duration_h"])) * 60
     e_used = _energy_at(plan, t)
-    rate = float(site.spaceweather.get("rad_gcr_dose_mgy_per_day", 0.21))
+    rate = radiation.rates(site.spaceweather)[0]
     return Moment(
         t_min=t, lat=lat, lon=lon, where=where,
         next_id=nxt["id"], next_name="the rover" if nxt["kind"] == "end" else nxt["name"],
@@ -224,7 +225,7 @@ def live_moment(plan: dict, site, eva, stack, back, lat: float, lon: float, t_mi
             break
     b_ = usable_budgets(eva)
     o2_total = float(eva.suit.get("o2_capacity_h", eva.eva["max_duration_h"])) * 60
-    rate = float(site.spaceweather.get("rad_gcr_dose_mgy_per_day", 0.21))
+    rate = radiation.rates(site.spaceweather)[0]
     at = nxt["id"] if remaining and to_next < 10.0 else None
     wh = None
     if back is not None and a is not None and back.reached(a):

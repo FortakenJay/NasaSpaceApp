@@ -5,6 +5,7 @@ Tables:
   stops         EVA start + science stops per site (seeded from data/sites/<site>/stops.json)
   plans         saved plan requests and, from M4, their computed results (JSON)
   observations  field notes / sample IDs logged at a stop (the "sample & observation log" idea)
+  settings      app-wide key/value settings (which Base is focused)
 """
 from __future__ import annotations
 
@@ -59,6 +60,13 @@ class Plan(Base):
     stop_codes: Mapped[list] = mapped_column(JSON)          # requested stops in order
     status: Mapped[str] = mapped_column(String(16), default="requested")  # requested | computed | failed
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)       # PlanResponse once M4 lands
+
+
+class Setting(Base):
+    """Small app-wide key/value settings (e.g. "focused_base"). A new table, so create_all adds it to old databases."""
+    __tablename__ = "settings"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
 
 
 class Observation(Base):

@@ -29,6 +29,9 @@ interface Props {
   stops: Stop[];
   result: PlanResult | null;
   live: boolean;
+  /** The focused Base: its id keeps the browser from reusing another Base's cached ground texture. */
+  baseId: string;
+  siteName: string;
   onClose: () => void;
 }
 
@@ -61,7 +64,7 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 /** The walk simulator: the planned walk on the real Gale terrain, on foot, with the suit display and voice. */
-export default function SimulationView({ stops, result, live, onClose }: Props) {
+export default function SimulationView({ stops, result, live, baseId, siteName, onClose }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const engine = useRef<SimEngine | null>(null);
   const terrainRef = useRef<Terrain | null>(null);
@@ -131,7 +134,7 @@ export default function SimulationView({ stops, result, live, onClose }: Props) 
     const t = new Terrain(data.data);
     const walk = walkGrid.grid;
     terrainRef.current = t;
-    Promise.all([loadTexture(simTextureUrl('photo', STEP)), loadTexture(simTextureUrl('hazard', STEP)).catch(() => null), loadImage(simTextureUrl('photo', STEP))])
+    Promise.all([loadTexture(simTextureUrl('photo', STEP, baseId)), loadTexture(simTextureUrl('hazard', STEP, baseId)).catch(() => null), loadImage(simTextureUrl('photo', STEP, baseId))])
       .then(([photo, hazard, img]) => {
         if (cancelled || !host.current) return;
         photoImg.current = img;
@@ -155,7 +158,7 @@ export default function SimulationView({ stops, result, live, onClose }: Props) 
       setEng(null);
       stopSpeaking();
     };
-  }, [data.data, simStops, route, routeBack, fineReady, sunReady, walkGrid, sunTrack.data]);
+  }, [data.data, simStops, route, routeBack, fineReady, sunReady, walkGrid, sunTrack.data, baseId]);
 
   // sound (off until asked for: browsers only start audio after a click): footsteps through the suit, the rover
   // through the thin air, the radio
@@ -421,7 +424,7 @@ export default function SimulationView({ stops, result, live, onClose }: Props) 
       <div className="sim-canvas" ref={host} />
       {!s && (
         <div className="sim-loading">
-          {!live ? 'The simulation needs the planner service (marswalk serve).' : loadError || data.isError ? `Could not load the terrain. ${describeError(data.error, 'Loading')} ${loadError ?? ''}` : 'Building Gale crater…'}
+          {!live ? 'The simulation needs the planner service (marswalk serve).' : loadError || data.isError ? `Could not load the terrain. ${describeError(data.error, 'Loading')} ${loadError ?? ''}` : `Building ${siteName}…`}
         </div>
       )}
 

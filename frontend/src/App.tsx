@@ -4,7 +4,9 @@ import { formatHours } from './format';
 
 const SimulationView = lazy(() => import('./sim/SimulationView'));
 import { describeError, useAddStop, useComputePlan, useDeleteStop, useLayers, usePlans, useSite, useUpdateStop } from './api';
-import type { CostModel, LayerInfo, StopOrder } from './api';
+import type { CostModel, LayerInfo, SiteData, StopOrder } from './api';
+import { BaseCard, BasePanel } from './components/BasePanel';
+import { useBaseWorkflow } from './components/useBaseWorkflow';
 import { MarsMap } from './map/MarsMap';
 import { MAX_ADDED_STOPS, PLACEHOLDER_LEGS } from './map/layers';
 import { LayerToggles } from './components/LayerToggles';
@@ -23,7 +25,7 @@ import { SuitDisplayPanel } from './components/SuitDisplayPanel';
 const NO_OVERLAYS: LayerInfo[] = [];
 const DEFAULT_USABLE_H = 5.6; // 8 h of oxygen less the 30% walk-home reserve, if the API does not say
 const PHOTO = 'photo';
-const EXPECTED_API = '1.1'; // major.minor this app was built against (src/marswalk/__init__.py)
+const EXPECTED_API = '1.2'; // major.minor this app was built against (src/marswalk/__init__.py)
 const VIEW_LABELS: Record<string, string> = {
   hillshade: 'Relief',
   slope5: 'Slope',
@@ -37,7 +39,14 @@ const VIEW_LABELS: Record<string, string> = {
 
 export function App() {
   const site = useSite();
-  const live = site.data?.live ?? false;
+  if (site.isPending) return <div className="loading">Loading the site…</div>;
+  if (site.isError) return <div className="loading">{describeError(site.error, 'Loading the site')}</div>;
+  // Everything below belongs to one Base: a new focus remounts it, so no selection, plan or view carries over.
+  return <Workspace key={site.data.site.id} data={site.data} />;
+}
+
+function Workspace({ data }: { data: SiteData }) {
+  const live = data.live;
   const layers = useLayers(live);
   const compute = useComputePlan();
   const plans = usePlans(live);
@@ -57,6 +66,10 @@ export function App() {
   const [highlight, setHighlight] = useState<GeoJSON.FeatureCollection | null>(null);
   const [simulating, setSimulating] = useState(false);
 
+  // Bases: all on the map, one in focus; a new one is picked inside a HiRISE footprint and downloaded.
+  const stopAdding = useCallback(() => setAdding(false), []);
+  const base = useBaseWorkflow(live, data.site.id, stopAdding);
+
   const result = compute.data ?? null;
   const route = result?.route ?? null;
   const toggleSelected = useCallback((id: string) => setSelectedStopId((cur) => (cur === id ? null : id)), []);
@@ -65,7 +78,7 @@ export function App() {
   const overlays = useMemo(
     () =>
       (layers.data ?? NO_OVERLAYS).map((o) => {
-        if (o.key === 'safezone') return { ...o, url: `${o.url}?elapsed_h=${elapsedH}&cost=${cost}` };
+        if (o.key === 'safezone') return { ...o, url: `${o.url}${o.url.includes('?') ? '&' : '?'}elapsed_h=${elapsedH}&cost=${cost}` };
         return o.key === 'hillshade' ? { ...o, opacity: 0.9 } : o;
       }),
     [layers.data, elapsedH, cost],
@@ -84,10 +97,7 @@ export function App() {
     [overlays],
   );
 
-  if (site.isPending) return <div className="loading">Loading the site…</div>;
-  if (site.isError) return <div className="loading">{describeError(site.error, 'Loading the site')}</div>;
-
-  const { site: meta, stops, eva, api_version: apiVersion, project_root: projectRoot } = site.data;
+  const { site: meta, stops, eva, api_version: apiVersion, project_root: projectRoot } = data;
   const usableH = eva?.usable_h ?? DEFAULT_USABLE_H;
   const walkLimitM = eva?.max_distance_from_rover_m ?? null;
   const staleService = live && !(apiVersion ?? '').startsWith(EXPECTED_API);
@@ -161,8 +171,25 @@ export function App() {
           onSelectStop={toggleSelected}
           onAddStop={onAddStop}
           onMoveStop={onMoveStop}
+          {...base.map}
+          basePopup={base.selectedBase && (
+            <BaseCard
+              base={base.selectedBase}
+              focused={base.selectedBase.id === base.focusedId}
+              busy={base.busy || !live}
+              onFocus={base.onFocus}
+              onDelete={base.onDelete}
+              onResume={base.onResume}
+              onClose={base.closeCard}
+            />
+          )}
         />
         {views.length > 1 && <LayerToggles views={views} value={mapView} onChange={setMapView} />}
+        {base.picking && (
+          <p className="map-banner">
+            {base.lookupFetching ? 'Checking that spot…' : 'Click inside a cyan outline (HiRISE 1 m stereo terrain) to place a new Base.'}
+          </p>
+        )}
         {adding && (
           <p className="map-banner">
             {addStop.isPending ? 'Saving the stop…' : 'Click the ground to add a stop. It is saved straight away.'}
@@ -204,6 +231,7 @@ export function App() {
             </button>
           </div>
           <p className="site-name">{meta.name}</p>
+          {(meta.warnings ?? []).map((w) => <p key={w} className="hint">{w}</p>)}
           <p className="lede">
             Plan a walk outside on Mars. Choose where to go, get the safest route on foot, and see how long the crew can stay
             out and still walk home.
@@ -220,7 +248,12 @@ export function App() {
           )}
         </header>
 
-        <SpaceWeatherPanel live={live} />
+        <details className="more bases-panel" open>
+          <summary>Bases ({base.panel.bases.length || 1})</summary>
+          <BasePanel {...base.panel} />
+        </details>
+
+        <SpaceWeatherPanel live={live} radiation={meta.radiation} />
 
         <Step n={1} title="Choose where to go" done={visitIds.length > 0}>
           <StopList
@@ -306,7 +339,8 @@ export function App() {
       </aside>
       {simulating && (
         <Suspense fallback={<div className="sim-loading sim-fallback">Loading the simulation…</div>}>
-          <SimulationView stops={stops} result={result} live={live} onClose={() => setSimulating(false)} />
+          <SimulationView stops={stops} result={result} live={live} baseId={meta.id} siteName={meta.name}
+            onClose={() => setSimulating(false)} />
         </Suspense>
       )}
     </div>

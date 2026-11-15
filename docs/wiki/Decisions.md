@@ -12,6 +12,16 @@ What was chosen, what it was chosen over, and why.
 | Slope scales | 1 m and 5 m, plus roughness | One slope | A ledge and a hillside are different hazards |
 | Sand | THEMIS thermal inertia, flagged as regional | Detect sand in the photo | TI is a physical measurement; at 100 m it is honest about its scale |
 
+## Bases (other places on Mars)
+
+| Decision | Chosen | Instead of | Why |
+|---|---|---|---|
+| Where a Base can go | Only inside a 1 m HiRISE stereo DTM (0.1 % of Mars) | Anywhere, on CTX or MOLA terrain | A suited walk needs ground resolved at the scale of a stride; 6-20 m terrain hides every ledge the off-limits test exists for |
+| How many | Several saved, all on the map, one in focus | One at a time | Compare sites without downloading again; one stack (about 1 GB) in memory |
+| Alignment | Measured against the photo the map shows, with a quality grade | Trust the file, or one absolute frame | The global mosaic itself differs from Trek's by about 100 m at Gale; what matters on screen is that terrain and photo agree |
+| Radiation away from Gale | Gale's RAD value scaled by air pressure, labelled *estimate*, with a range | Gale's value everywhere, or no number | Dose depends on the air overhead; RAD's own pressure trend (Guo et al. 2017) is the measured link |
+| Grid away from the equator | Resample to square pixels when more than 0.5 % off | Teach every layer non-square pixels | One resampling at download keeps slope, A*, radio and the simulator unchanged |
+
 ## Routing
 
 | Decision | Chosen | Instead of | Why |

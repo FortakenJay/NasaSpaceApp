@@ -2,7 +2,12 @@
 // sync React props (stops, selection, route, overlays, visibility) into it. No data fetching here:
 // the parent passes everything in as props.
 import 'ol/ol.css';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import Overlay from 'ol/Overlay';
+import Polygon from 'ol/geom/Polygon';
+import type { BaseInfo, BBox, FootprintCollection } from '../api';
 import OlMap from 'ol/Map';
 import View from 'ol/View';
 import Feature from 'ol/Feature';
@@ -24,6 +29,7 @@ import type BaseLayer from 'ol/layer/Base';
 import type { LayerInfo, Site, Stop } from '../api';
 import { MARS_GEOGRAPHIC, METERS_PER_DEGREE, trekSource } from './mars';
 import { PLACEHOLDER_LEGS, WALK_LIMIT } from './layers';
+import { useBaseLayers } from './useBaseLayers';
 
 const COLORS = { start: '#4cbb6c', stop: '#e8a33d', user: '#d07cf0', skipped: '#8a9199', route: '#3dd6e8', routeBack: '#ff6a00' };
 
@@ -64,7 +70,70 @@ function highlightStyle(f: FeatureLike): Style[] {
   })];
 }
 
+/** Every saved Base: the focused one bright, the others dimmed, one still downloading in orange. */
+function baseStyle(f: FeatureLike, resolution: number): Style[] {
+  const b = f.get('base') as BaseInfo;
+  const focused = f.get('focused') as boolean;
+  const selected = f.get('selected') as boolean;
+  const pending = b.status !== 'ready';
+  const color = pending ? '#ff9a3c' : focused ? '#4cbb6c' : '#e6edf3';
+  if (f.getGeometry()?.getType() === 'Polygon') {
+    // The Base's terrain window, only once zoomed in far enough to matter.
+    if (resolution > 0.02) return [];
+    return [new Style({ stroke: new Stroke({ color, width: focused ? 1.5 : 1, lineDash: [6, 5] }) })];
+  }
+  return [new Style({
+    image: new Circle({
+      radius: focused || selected ? 9 : 7,
+      fill: new Fill({ color }),
+      stroke: new Stroke({ color: selected ? '#fff' : '#111', width: selected ? 3 : 2 }),
+    }),
+    text: new Text({
+      text: b.name, offsetY: -18, font: `${focused ? 700 : 600} 12px system-ui, sans-serif`,
+      fill: new Fill({ color: '#fff' }), stroke: new Stroke({ color: '#000', width: 3 }),
+    }),
+    zIndex: focused ? 2 : 1,
+  })];
+}
+
+/** HiRISE stereo terrain footprints: outlines when zoomed in, dots at planet scale (strips are only a few km). */
+function footprintStyle(f: FeatureLike, resolution: number): Style {
+  const ok = f.get('supported') as boolean;
+  const color = ok ? 'rgba(61,214,232,0.95)' : 'rgba(160,168,176,0.7)';
+  if (resolution > 0.004) {
+    return new Style({
+      geometry: (feat) => (feat.getGeometry() as Polygon).getInteriorPoint(),
+      image: new Circle({ radius: ok ? 3 : 2, fill: new Fill({ color }) }),
+    });
+  }
+  return new Style({
+    stroke: new Stroke({ color, width: ok ? 1.5 : 1 }),
+    fill: new Fill({ color: ok ? 'rgba(61,214,232,0.10)' : 'rgba(160,168,176,0.06)' }),
+  });
+}
+
 /** A circle of `radiusM` metres around (lat, lon), as lon/lat vertices. */
+/**
+ * Zoomed out, a HiRISE strip is only a few pixels wide, so a click just beside one would miss it. A click within 8 px
+ * of a supported footprint it is not inside lands on that footprint's interior instead.
+ */
+function snapToFootprint(map: OlMap, source: VectorSource, coord: number[], pixel: number[]): number[] {
+  const usable = (f: FeatureLike) => f.get('supported') === true;
+  if (source.getFeaturesAtCoordinate(coord).some(usable)) return coord;
+  let snapped: number[] | null = null;
+  map.forEachFeatureAtPixel(
+    pixel,
+    (f) => {
+      const g = f.getGeometry();
+      if (!usable(f) || !(g instanceof Polygon)) return false;
+      snapped = g.getInteriorPoint().getCoordinates().slice(0, 2);
+      return true;
+    },
+    { layerFilter: (l) => (l as VectorLayer).getSource?.() === source, hitTolerance: 8 },
+  );
+  return snapped ?? coord;
+}
+
 function ring(lat: number, lon: number, radiusM: number): number[][] {
   const dLat = radiusM / METERS_PER_DEGREE;
   const dLon = dLat / Math.cos((lat * Math.PI) / 180);
@@ -95,6 +164,19 @@ interface Props {
   onAddStop: (lat: number, lon: number) => void;
   /** Stops the crew added themselves can be dragged to a new spot. */
   onMoveStop: (id: string, lat: number, lon: number) => void;
+  /** Every saved Base, drawn as a marker with its terrain window; the focused one is highlighted. */
+  bases: BaseInfo[];
+  focusedBaseId: string;
+  selectedBaseId: string | null;
+  onSelectBase: (id: string | null) => void;
+  /** Card shown next to the selected Base's marker (focus / delete). */
+  basePopup: ReactNode;
+  /** While picking a new Base: HiRISE footprints are shown and a click calls onPickBase(lat, lon). */
+  picking: boolean;
+  footprints: FootprintCollection | null;
+  pickPoint: { lat: number; lon: number } | null;
+  pickBox: BBox | null;
+  onPickBase: (lat: number, lon: number) => void;
 }
 
 interface Handles {
@@ -105,29 +187,41 @@ interface Handles {
   routeSource: VectorSource;
   limitSource: VectorSource;
   answerSource: VectorSource;
+  baseSource: VectorSource;
+  footprintSource: VectorSource;
+  pickSource: VectorSource;
+  popup: Overlay;
   overlays: Map<string, { layer: ImageLayer<ImageStatic>; url: string }>;
   fitted: boolean;
 }
 
 export function MarsMap({
   site, stops, skippedIds, selectedStopId, route, highlight, overlays, visibility, walkLimitM, adding, syncKey,
-  onSelectStop, onAddStop, onMoveStop,
+  onSelectStop, onAddStop, onMoveStop, bases, focusedBaseId, selectedBaseId, onSelectBase, basePopup, picking,
+  footprints, pickPoint, pickBox, onPickBase,
 }: Props) {
   const target = useRef<HTMLDivElement>(null);
+  // OpenLayers moves an overlay's element into its own container, so the popup's element is created outside React
+  // and its content is rendered into it with a portal.
+  const [popupEl] = useState(() => {
+    const el = document.createElement('div');
+    el.className = 'map-popup';
+    return el;
+  });
   const handles = useRef<Handles | null>(null);
-  const actions = useRef({ adding, onSelectStop, onAddStop, onMoveStop });
+  const actions = useRef({ adding, picking, onSelectStop, onAddStop, onMoveStop, onSelectBase, onPickBase });
 
   useEffect(() => {
-    actions.current = { adding, onSelectStop, onAddStop, onMoveStop };
-    if (target.current) target.current.style.cursor = adding ? 'crosshair' : '';
+    actions.current = { adding, picking, onSelectStop, onAddStop, onMoveStop, onSelectBase, onPickBase };
+    if (target.current) target.current.style.cursor = adding || picking ? 'crosshair' : '';
     // While adding stops a double click would zoom AND drop two stops, so zoom-on-double-click is paused.
     handles.current?.map.getInteractions().forEach((i) => {
-      if (i instanceof DoubleClickZoom) i.setActive(!adding);
+      if (i instanceof DoubleClickZoom) i.setActive(!adding && !picking);
     });
-  }, [adding, onSelectStop, onAddStop, onMoveStop]);
+  }, [adding, picking, onSelectStop, onAddStop, onMoveStop, onSelectBase, onPickBase]);
 
   // Create the map once per basemap; tear it down on unmount.
-  const { url_template: tileUrl, max_zoom: maxZoom } = site.basemap;
+  const { url_template: tileUrl, max_zoom: maxZoom, tile_size: tileSize = 256 } = site.basemap;
   // Wider imagery under the basemap, as a stable string so the map is not rebuilt on every render.
   const contextKey = JSON.stringify(site.context ?? []);
   useEffect(() => {
@@ -138,10 +232,24 @@ export function MarsMap({
     const limitSource = new VectorSource();
     const answerSource = new VectorSource();
     const stopLayer = new VectorLayer({ source: stopSource, zIndex: 10 });
-    const context = JSON.parse(contextKey) as { name: string; url_template: string; max_zoom: number }[];
+    const baseSource = new VectorSource();
+    const footprintSource = new VectorSource();
+    const pickSource = new VectorSource();
+    const baseLayer = new VectorLayer({ source: baseSource, zIndex: 12, style: baseStyle });
+    const context = JSON.parse(contextKey) as { name: string; url_template: string; max_zoom: number; tile_size?: number }[];
     const layers = new Map<string, BaseLayer>([
-      ...context.map((c): [string, BaseLayer] => [c.name, new TileLayer({ source: trekSource(c.url_template, c.max_zoom) })]),
-      ['HiRISE basemap', new TileLayer({ source: trekSource(tileUrl, maxZoom) })],
+      ...context.map((c): [string, BaseLayer] => [
+        c.name, new TileLayer({ source: trekSource(c.url_template, c.max_zoom, c.tile_size ?? 256) }),
+      ]),
+      ['HiRISE basemap', new TileLayer({ source: trekSource(tileUrl, maxZoom, tileSize) })],
+      ['HiRISE terrain', new VectorLayer({ source: footprintSource, zIndex: 3, style: footprintStyle })],
+      ['New Base', new VectorLayer({
+        source: pickSource, zIndex: 13,
+        style: (f) => (f.getGeometry()?.getType() === 'Point'
+          ? new Style({ image: new Circle({ radius: 8, fill: new Fill({ color: '#ff9a3c' }), stroke: new Stroke({ color: '#fff', width: 2 }) }) })
+          : new Style({ stroke: new Stroke({ color: '#ff9a3c', width: 2, lineDash: [8, 6] }), fill: new Fill({ color: 'rgba(255,154,60,0.08)' }) })),
+      })],
+      ['Bases', baseLayer],
       [WALK_LIMIT, new VectorLayer({
         source: limitSource, zIndex: 4,
         style: new Style({ stroke: new Stroke({ color: 'rgba(255,255,255,0.85)', width: 1.5, lineDash: [2, 7] }) }),
@@ -182,8 +290,24 @@ export function MarsMap({
       const [lon, lat] = geometry.getCoordinates();
       actions.current.onMoveStop(id, lat, lon);
     });
+    // autoPan keeps the popup clear of the layer toolbar along the top of the map
+    const popup = new Overlay({ element: popupEl, positioning: 'bottom-center', offset: [0, -16], stopEvent: true,
+      autoPan: { margin: 90, animation: { duration: 200 } } });
+    map.addOverlay(popup);
     // 'click' answers at once ('singleclick' waits 250 ms to rule out a double click).
     const clickKey = map.on('click', (e) => {
+      // A Base marker first (any Base, focused or not), then a stop, then the pick / add modes.
+      const hitBase = map.forEachFeatureAtPixel(
+        e.pixel,
+        (f) => {
+          const b = f.get('base') as BaseInfo | undefined;
+          if (!b || f.getGeometry()?.getType() !== 'Point') return false;
+          actions.current.onSelectBase(b.id);
+          return true;
+        },
+        { layerFilter: (l) => l === baseLayer, hitTolerance: 8 },
+      );
+      if (hitBase) return;
       const hitStop = map.forEachFeatureAtPixel(
         e.pixel,
         (f) => {
@@ -195,18 +319,30 @@ export function MarsMap({
         { layerFilter: (l) => l === stopLayer, hitTolerance: 8 },
       );
       // The view is in Mars geographic degrees, so the click coordinate is [lon, lat].
-      if (!hitStop && actions.current.adding) actions.current.onAddStop(e.coordinate[1], e.coordinate[0]);
+      if (hitStop) return;
+      if (actions.current.picking) {
+        const [lon, lat] = snapToFootprint(map, footprintSource, e.coordinate, e.pixel);
+        actions.current.onPickBase(lat, lon);
+      } else if (actions.current.adding) actions.current.onAddStop(e.coordinate[1], e.coordinate[0]);
+      else actions.current.onSelectBase(null);
     });
-    handles.current = { map, layers, stopSource, legSource, routeSource, limitSource, answerSource, overlays: new Map(), fitted: false };
+    handles.current = {
+      map, layers, stopSource, legSource, routeSource, limitSource, answerSource, baseSource, footprintSource, pickSource,
+      popup, overlays: new Map(), fitted: false,
+    };
     if (import.meta.env.DEV) (window as unknown as { __marswalk?: unknown }).__marswalk = handles.current;
     return () => {
       unByKey(clickKey);
       unByKey(translateKey);
+      map.removeInteraction(translate);
+      map.removeOverlay(popup);
       map.setTarget(undefined);
       map.dispose();
       handles.current = null;
     };
-  }, [tileUrl, maxZoom, contextKey]);
+  }, [tileUrl, maxZoom, tileSize, contextKey, popupEl]);
+
+  useBaseLayers(handles, { bases, focusedBaseId, selectedBaseId, picking, footprints, pickPoint, pickBox });
 
   // Stops, the straight-line preview and the walk-limit ring. The view is fitted once, not on every edit.
   useEffect(() => {
@@ -231,7 +367,11 @@ export function MarsMap({
     h.limitSource.clear();
     if (start && walkLimitM) h.limitSource.addFeature(new Feature(new LineString(ring(start.lat, start.lon, walkLimitM))));
     if (!h.fitted) {
-      h.map.getView().fit(boundingExtent(stops.map((s) => [s.lon, s.lat])), { padding: [70, 70, 180, 70] });
+      // A new Base has only its rover: fit the walk-limit ring instead of a zero-size box around one point.
+      const pts = stops.length >= 2 || !start
+        ? stops.map((s) => [s.lon, s.lat])
+        : ring(start.lat, start.lon, walkLimitM ?? 2000);
+      h.map.getView().fit(boundingExtent(pts), { padding: [70, 70, 180, 70] });
       h.fitted = true;
     }
   }, [stops, skippedIds, walkLimitM, syncKey]);
@@ -315,5 +455,10 @@ export function MarsMap({
     for (const [name, layer] of h.layers) layer.setVisible(visibility[name] ?? true);
   }, [visibility, overlays]);
 
-  return <div ref={target} className="map" role="application" aria-label="Traverse map" />;
+  return (
+    <>
+      <div ref={target} className="map" role="application" aria-label="Traverse map" />
+      {selectedBaseId && createPortal(basePopup, popupEl)}
+    </>
+  );
 }

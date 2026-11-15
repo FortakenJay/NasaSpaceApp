@@ -1,0 +1,308 @@
+PDS_VERSION_ID = PDS3
+RECORD_TYPE = FIXED_LENGTH
+RECORD_BYTES = 610
+FILE_RECORDS = 12761
+^RDR_INDEX_TABLE = "DTMCUMINDEX.TAB"
+OBJECT = RDR_INDEX_TABLE
+    INDEX_TYPE = SINGLE
+    INTERCHANGE_FORMAT = ASCII
+    ROWS = 12761
+    ROW_BYTES = 610
+    COLUMNS = 54
+    OBJECT = COLUMN
+        NAME = VOLUME_ID
+        DATA_TYPE = CHARACTER
+        START_BYTE = 2
+        BYTES = 10
+        FORMAT = "A10"
+        DESCRIPTION = "Volume identification"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = FILE_NAME_SPECIFICATION
+        DATA_TYPE = CHARACTER
+        START_BYTE = 15
+        BYTES = 94
+        FORMAT = "A94"
+        DESCRIPTION = "Path and file name of HiRISE RDR product"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = INSTRUMENT_HOST_ID
+        DATA_TYPE = CHARACTER
+        START_BYTE = 113
+        BYTES = 3
+        FORMAT = "A3"
+        DESCRIPTION = "Spacecraft hosting the HiRISE instrument, 
+                   always MRO"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = INSTRUMENT_ID
+        DATA_TYPE = CHARACTER
+        START_BYTE = 119
+        BYTES = 6
+        FORMAT = "A6"
+        DESCRIPTION = "Instrument that acquired the observaiton, 
+                   always HIRISE"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = PRODUCT_ID
+        DATA_TYPE = CHARACTER
+        START_BYTE = 128
+        BYTES = 33
+        FORMAT = "A33"
+        DESCRIPTION = "Unique identification associated with the product"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = PRODUCT_VERSION_ID
+        DATA_TYPE = CHARACTER
+        START_BYTE = 164
+        BYTES = 3
+        FORMAT = "A3"
+        DESCRIPTION = "Version number of this product"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = TARGET_NAME
+        DATA_TYPE = CHARACTER
+        START_BYTE = 170
+        BYTES = 32
+        FORMAT = "A32"
+        DESCRIPTION = "Target Name of the observation"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = RATIONALE_DESC
+        DATA_TYPE = CHARACTER
+        START_BYTE = 205
+        BYTES = 75
+        FORMAT = "A75"
+        DESCRIPTION = "Informational note about the observation"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = LEFT_OBSERVATION_ID
+        DATA_TYPE = CHARACTER
+        START_BYTE = 283
+        BYTES = 15
+        FORMAT = "A15"
+        DESCRIPTION = "The observation ID of the left image used in
+                       the creation of the DTM"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = RIGHT_OBSERVATION_ID
+        DATA_TYPE = CHARACTER
+        START_BYTE = 301
+        BYTES = 15
+        FORMAT = "A15"
+        DESCRIPTION = "The observation ID of the right image used in
+                       the creation of the DTM"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = SOURCE_DTM_PRODUCT_ID
+        DATA_TYPE = CHARACTER
+        START_BYTE = 319
+        BYTES = 33
+        FORMAT = "A33"
+        DESCRIPTION = "For orthoimages, the DTM used to orthorectify 
+        			   the image. NA for DTM products"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = DATA_TYPE
+        DATA_TYPE = CHARACTER
+        START_BYTE = 355
+        BYTES = 16
+        FORMAT = "A16"
+        DESCRIPTION = "The type of data represented in the product,
+                       this may be elevation, radii, or left or right
+                       orthoimage"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = IMAGE_LINES
+        DATA_TYPE = ASCII_INTEGER
+        START_BYTE = 373
+        BYTES = 6
+        FORMAT = "I6"
+        DESCRIPTION = "Number of image lines"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = LINE_SAMPLES
+        DATA_TYPE = ASCII_INTEGER
+        START_BYTE = 380
+        BYTES = 6
+        FORMAT = "I6"
+        DESCRIPTION = "Number of line samples"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = NORTH_AZIMUTH
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 387
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "The angle in degrees clockwise from the reference 
+                   axis of the observation (a line from the center to 
+                   the right edge of the observation) to the direction 
+                   to the north pole of the target body."
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = MINIMUM_LATITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 398
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Minimum latitude of the projected image"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = MAXIMUM_LATITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 409
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Maximum latitude of the projected image"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = MINIMUM_LONGITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 420
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Minimum longitude of the projected image."
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = MAXIMUM_LONGITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 431
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Maximum longitude of projected image"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = MAP_SCALE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 442
+        BYTES = 5
+        FORMAT = "F5.2"
+        DESCRIPTION = "Map scale in meters per pixel"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = MAP_RESOLUTION
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 448
+        BYTES = 10
+        FORMAT = "F10.3"
+        DESCRIPTION = "Map resolution in pixels per degree"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = MAP_PROJECTION_TYPE
+        DATA_TYPE = CHARACTER
+        START_BYTE = 460
+        BYTES = 19
+        FORMAT = "A19"
+        DESCRIPTION = "EQUIRECTANGULAR or POLAR STEREOGRAPHIC"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = PROJECTION_CENTER_LATITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 481
+        BYTES = 5
+        FORMAT = "F5.1"
+        DESCRIPTION = "Center latitude of the map projection. This does 
+                   not necessarily equal the center latitude of the 
+                   image."
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = PROJECTION_CENTER_LONGITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 487
+        BYTES = 8
+        FORMAT = "F8.3"
+        DESCRIPTION = "Center longitude of the map projection.  This does 
+                   not necessarily equal the center longitude of the 
+                   image."
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = LINE_PROJECTION_OFFSET
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 496
+        BYTES = 12
+        FORMAT = "F12.1"
+        DESCRIPTION = "The line_projection_offset element provides the 
+                   line offset value of the map projection origin 
+                   position from the line and sample 1,1 (line and 
+                   sample 1,1 is considered the upper left corner of 
+                   the digital array)."
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = SAMPLE_PROJECTION_OFFSET
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 509
+        BYTES = 12
+        FORMAT = "F10.1"
+        DESCRIPTION = "The sample_projection_offset element provides the 
+                   sample offset value of the map projection origin 
+                   position from line and sample 1,1 (line and sample 
+                   1,1 is considered the upper left corner of the 
+                   digital array). Note: that the positive direction 
+                   is to the right and down."
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = CORNER1_LATITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 522
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Latitude of corner 1 of the projected image"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = CORNER1_LONGITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 533
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Longitude of corner 1 of the projected image"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = CORNER2_LATITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 544
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Latitude of corner 2 of the projected image"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = CORNER2_LONGITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 555
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Longitude of corner 2 of the projected image"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = CORNER3_LATITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 566
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Latitude of corner 3 of the projected image"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = CORNER3_LONGITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 577
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Longitude of corner 3 of the projected image"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = CORNER4_LATITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 588
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Latitude of corner 4 of the projected image"
+    END_OBJECT
+    OBJECT = COLUMN
+        NAME = CORNER4_LONGITUDE
+        DATA_TYPE = ASCII_REAL
+        START_BYTE = 599
+        BYTES = 10
+        FORMAT = "F10.4"
+        DESCRIPTION = "Longitude of corner 4 of the projected image"
+    END_OBJECT
+END_OBJECT
+END

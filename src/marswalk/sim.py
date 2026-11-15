@@ -17,6 +17,7 @@ from affine import Affine
 from marswalk.cost.physics import walk_speed_cap
 from marswalk.geo import GeoGrid, Raster
 from marswalk.layers.radio import SHADOW
+from marswalk.spaceweather import radiation
 
 MAX_TEXTURE_PX = 2048
 FORMAT = 2   # binary layouts of terrain.bin / fine.bin; part of their URLs, so a browser never decodes a stale copy
@@ -115,8 +116,8 @@ def terrain_package(site, eva, stack, start_lat: float, start_lon: float, points
             "walkback_reserve_frac": float(eva.eva["walkback_reserve_frac"]),
             "metabolic_budget_kj": float(eva.suit.get("metabolic_budget_kj", 12000.0)),
             "time_margin_factor": float(eva.eva.get("time_margin_factor", 1.0)),
-            "rad_mgy_per_day": float(site.spaceweather.get("rad_gcr_dose_mgy_per_day", 0.21)),
-            "rad_msv_per_day": float(site.spaceweather.get("rad_dose_equivalent_msv_per_day", 0.64)),
+            "rad_mgy_per_day": radiation.rates(site.spaceweather)[0],
+            "rad_msv_per_day": radiation.rates(site.spaceweather)[1],
         },
     }
 

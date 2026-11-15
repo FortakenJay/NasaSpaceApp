@@ -449,16 +449,15 @@ def answer_oxygen(ctx: AskContext, place: Place | None) -> str:
 
 
 def answer_radiation(ctx: AskContext) -> str:
-    sw = ctx.site.spaceweather
-    gy = float(sw.get("rad_gcr_dose_mgy_per_day", 0.21))
-    sv = sw.get("rad_dose_equivalent_msv_per_day")
+    from marswalk.spaceweather import radiation
+    gy, sv, estimated, note = radiation.rates(ctx.site.spaceweather)
     dur_h = float(ctx.plan["summary"]["duration_h"]) if ctx.plan else float(ctx.eva.eva["max_duration_h"])
     what = "this" if ctx.plan else f"a full {dur_h:g} h"
     dose = gy * dur_h / 24
-    eq = f" ({float(sv) * dur_h / 24:.3f} mSv)" if sv else ""
-    text = (f"Over {what} {hm(dur_h * 60)} walk each crew member gets about {dose:.3f} mGy{eq} from cosmic rays, at the "
-            f"rate Curiosity's RAD instrument measures on the ground in Gale crater ({gy:g} mGy"
-            + (f", {float(sv):g} mSv" if sv else "") + " per day). A solar storm would add to that.")
+    where = (f"the rate {note} ({gy:.3g} mGy, {sv:.3g} mSv per day)" if estimated else
+             f"the rate Curiosity's RAD instrument measures on the ground in Gale crater ({gy:g} mGy, {sv:g} mSv per day)")
+    text = (f"Over {what} {hm(dur_h * 60)} walk each crew member gets about {dose:.3f} mGy ({sv * dur_h / 24:.3f} mSv) "
+            f"from cosmic rays, at {where}. A solar storm would add to that.")
     return text + " " + answer_weather(ctx, short=True)
 
 

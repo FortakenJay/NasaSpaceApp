@@ -82,12 +82,20 @@ def read_merged_dem(site: SiteConfig, url: str | None = None, log: Callable[[str
     return dem
 
 
-def fetch_site(site: SiteConfig, include_optional: bool = False, log: Callable[[str], None] = print) -> Path:
-    """Fetch the products for `site`. Returns the raw data directory. Raises only if the DTM fails."""
+def fetch_site(site: SiteConfig, include_optional: bool = False, log: Callable[[str], None] = print,
+               progress: Callable[[str, float], None] | None = None, cancel=None) -> Path:
+    """Fetch the products for `site`. Returns the raw data directory. Raises only if the DTM fails (or on cancel).
+
+    `progress(step, fraction)` reports "dtm", "ti" and "ortho" progress; `cancel` (a threading.Event) stops the
+    fetch between strips and download chunks with raster.Cancelled.
+    """
     import rasterio
 
     from marswalk.geo import GeoGrid, Raster
     from marswalk.sources import raster as rs
+
+    def step(name: str):
+        return (lambda f: progress(name, f)) if progress else None
 
     out = raw_dir(site)
     out.mkdir(parents=True, exist_ok=True)
@@ -114,11 +122,14 @@ def fetch_site(site: SiteConfig, include_optional: bool = False, log: Callable[[
         log(f"dtm: cached ({dtm_tif})")
     else:
         log(f"dtm: reading window from {site.dtm['url']} ...")
-        dtm = rs.read_bbox(site.dtm["url"], site.bbox, pad_px=DTM_PAD_PX)
+        dtm = rs.read_bbox(site.dtm["url"], site.bbox, pad_px=DTM_PAD_PX, progress=step("dtm"), cancel=cancel)
         rs.write_geotiff(dtm, dtm_tif)
         record("dtm", site.dtm, dtm_tif, dtm.shape)
         log(f"dtm: {dtm.shape[0]} x {dtm.shape[1]} px -> {dtm_tif}")
-    dtm_grid = rs.read_geotiff(dtm_tif).grid
+    # The DTM window on the file's own grid (what the orthos are cropped to, before any squaring below).
+    full = GeoGrid.from_product(site.dtm)
+    win = rs.bbox_window(full, site.bbox, pad_px=DTM_PAD_PX)
+    src_grid = full.window(int(win.row_off), int(win.col_off), int(win.height), int(win.width))
 
     # 2b. Merged DEM (optional: without it the app plans on the HiRISE strip alone)
     merged_tif = out / MERGED_FILE
@@ -144,10 +155,12 @@ def fetch_site(site: SiteConfig, include_optional: bool = False, log: Callable[[
     if ti_cfg and (stale or not ti_tif.exists()):
         try:
             log("ti: reading window ...")
-            ti = rs.read_bbox(ti_cfg["url"], site.bbox, pad_px=2)
+            ti = rs.read_bbox(ti_cfg["url"], site.bbox, pad_px=2, progress=step("ti"), cancel=cancel)
             rs.write_geotiff(ti, ti_tif)
             record("thermal_inertia", ti_cfg, ti_tif, ti.shape)
             log(f"ti: {ti.shape[0]} x {ti.shape[1]} px -> {ti_tif}")
+        except rs.Cancelled:
+            raise
         except Exception as e:  # noqa: BLE001 - recorded, not fatal
             prods["thermal_inertia"] = {"error": f"{type(e).__name__}: {e}"}
             log(f"ti: FAILED ({e}); planning continues without the sand flag")
@@ -163,17 +176,50 @@ def fetch_site(site: SiteConfig, include_optional: bool = False, log: Callable[[
             log(f"{key}: skipped (not on the DTM grid; add a reprojection step for this product)")
             continue
         try:
-            jp2 = rs.download(cfg["url"], out / f"{cfg['id']}.JP2")
-            full = GeoGrid.from_product(site.dtm)
-            win = rs.bbox_window(full, site.bbox, pad_px=DTM_PAD_PX)
+            prog = step("ortho") if key == "ortho_1m" else None
+            jp2 = rs.download(cfg["url"], out / f"{cfg['id']}.JP2",
+                              progress=(lambda f: prog(0.9 * f)) if prog else None, cancel=cancel)
             with rasterio.open(jp2) as ds:
                 a = ds.read(1, window=win).astype("float32")
-            rs.write_geotiff(Raster(a, dtm_grid, name=key), tif)
+            rs.write_geotiff(Raster(a, src_grid, name=key), tif)    # on the file's grid; squared below if needed
             record(key, cfg, tif, a.shape)
             log(f"{key}: {a.shape[0]} x {a.shape[1]} px -> {tif}")
+            if prog:
+                prog(1.0)
+        except rs.Cancelled:
+            raise
         except Exception as e:  # noqa: BLE001
             prods[key] = {"error": f"{type(e).__name__}: {e}"}
             log(f"{key}: FAILED ({e}); the map still has the Mars Trek basemap")
 
+    # 4. Square pixels on the ground (a Base far from its DTM's standard parallel)
+    _square_pixels(site, out, prods, manifest, src_grid, log)
     manifest_path.write_text(json.dumps(manifest, indent=1))
     return out
+
+
+def _square_pixels(site: SiteConfig, out: Path, prods: dict, manifest: dict, src_grid, log) -> None:
+    """Resample the DTM and the orthos (all on `src_grid`) onto one grid whose pixels are square on the ground.
+
+    The layers and the route search treat a pixel as a square of pixel_m metres. An equirectangular DTM is square on
+    the ground only at its standard parallel: Gale's DTM (lat_ts 0) at -4.8 deg is 0.35 % off and kept as is; the
+    Jezero DTM (lat_ts 15) at 18.4 deg is 1.8 % off, and a lat_ts-0 DTM at 40 deg would be 23 % off. Done once per file
+    (marked "square" in the manifest), always onto the same target grid.
+    """
+    from marswalk.sources import raster as rs
+    lat = (site.bbox["lat_min"] + site.bbox["lat_max"]) / 2
+    dst = rs.square_grid(src_grid, lat)
+    if dst is None:
+        manifest.pop("grid", None)
+        return
+    t = dst.transform
+    manifest["grid"] = {"note": "resampled so pixels are square on the ground at the site's latitude",
+                        "aspect_before": round(rs.ground_aspect(src_grid, lat), 5), "crs": dst.crs.to_wkt(),
+                        "transform": [t.a, t.b, t.c, t.d, t.e, t.f], "width": dst.width, "height": dst.height}
+    for key in ("dtm", "ortho_1m", "ortho_25cm", "ortho_color_1m"):
+        rec, tif = prods.get(key), out / f"{key}.tif"
+        if not rec or "error" in rec or rec.get("square") or not tif.exists():
+            continue
+        rs.write_geotiff(rs.warp(rs.read_geotiff(tif), dst), tif)
+        rec.update(square=True, shape=[dst.height, dst.width], sha256=_sha256(tif))
+        log(f"{key}: resampled to square {abs(t.a):.2f} m pixels (was {rs.ground_aspect(src_grid, lat):.4f} : 1)")

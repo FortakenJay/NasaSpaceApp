@@ -22,11 +22,23 @@ def site_payload(site: SiteConfig, stops: list[dict] | None = None) -> dict:
         stops = [{"id": s.id, "name": s.name, "lat": s.lat, "lon": s.lon, "kind": s.kind,
                   "science": s.science, "work_time_min": s.work_time_min, "dtm_z_m": s.dtm_z_m}
                  for s in (site.start, *site.stops)]
+    from marswalk.spaceweather.radiation import rates
+    gy, sv, estimated, note = rates(site.spaceweather)
+    align = site.dtm.get("alignment") or None
+    warnings = []
+    if align and align.get("source") == "file":
+        warnings.append("Terrain uses the HiRISE file's own coordinates: overlays may sit tens of metres off the photo.")
+    elif align and align.get("quality") == "coarse":
+        warnings.append("Terrain lined up against 20 m CTX imagery only (about +-10-20 m).")
     return {
         "site": {"id": site.id, "name": site.name, "bbox": site.bbox,
                  "radius_m": site.body["radius_m"],
                  "basemap": site.products.get("basemap_tiles", {}),
-                 "context": site.products.get("context_tiles", [])},
+                 "context": site.products.get("context_tiles", []),
+                 "terrain_id": site.dtm.get("id"),
+                 "alignment": align,
+                 "radiation": {"gcr_mgy_per_day": gy, "dose_eq_msv_per_day": sv, "estimate": estimated, "note": note},
+                 "warnings": warnings},
         "stops": stops,
     }
 

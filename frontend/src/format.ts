@@ -18,3 +18,9 @@ export function formatList(items: string[]): string {
   if (items.length <= 1) return items.join('');
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
 }
+
+/** 1.3e8 -> "130 MB"; 2.4e9 -> "2.4 GB"; 0 / missing -> "". */
+export function formatBytes(n: number | undefined | null): string {
+  if (!n) return '';
+  return n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1e6))} MB`;
+}

@@ -196,11 +196,132 @@ def _stub(milestone: str, fn):
     return run
 
 
+def _registry(args):
+    from marswalk.bases.registry import BaseRegistry
+    from marswalk.db.engine import DEFAULT_URL, make_engine, make_session_factory
+    return BaseRegistry(load_site(args.site), make_session_factory(make_engine(DEFAULT_URL)))
+
+
+def cmd_catalog(args) -> int:
+    from marswalk.sources import catalog
+    entries = catalog.ensure_index(force=args.action == "refresh")
+    if args.action == "refresh":
+        ok = sum(catalog.supported(e)[0] for e in entries)
+        print(f"{len(entries)} HiRISE DTMs in the catalog, {ok} usable for a Base")
+        return 0
+    if args.lat is None or args.lon is None:
+        print("lookup needs --lat and --lon", file=sys.stderr)
+        return 2
+    cands = catalog.choose(entries, args.lat, args.lon)
+    if not cands:
+        print("No 1 m HiRISE stereo terrain covers this point.")
+        return 1
+    for i, c in enumerate(cands):
+        e = c.entry
+        print(f"{'*' if i == 0 else ' '} {e.product_id}  {e.scale_m:g} m  edge {c.edge_m:,.0f} m  {e.rationale}")
+    bbox = catalog.base_bbox(args.lat, args.lon, cands[0].entry)
+    print(f"window {bbox}")
+    print(f"thermal inertia tile: {catalog.ti_tile(args.lat, args.lon) or 'none (poleward of 60 deg)'}")
+    print(f"download about {catalog.estimate_bytes(bbox, cands[0].entry.scale_m) / 1e9:.2f} GB")
+    return 0
+
+
+def cmd_base(args) -> int:
+    reg = _registry(args)
+    reg.startup()
+    if args.action == "list":
+        focused = reg.focused_id()
+        for b in reg.list():
+            mark = "*" if b["id"] == focused else " "
+            extra = f"  {b.get('product_id') or ''}  {b.get('status')}"
+            print(f"{mark} {b['id']:<36} {b['name']:<40}{extra}")
+        return 0
+    if args.action == "create":
+        if args.lat is None or args.lon is None:
+            print("create needs --lat and --lon", file=sys.stderr)
+            return 2
+        from marswalk.bases.jobs import JobRunner
+        runner = JobRunner(reg, load_eva(args.eva), log=print)
+        last = [""]
+
+        def watch():
+            import time
+            while runner.running():
+                s = runner.snapshot() or {}
+                line = f"{s.get('step')}: {100 * s.get('fraction', 0):.0f}%"
+                if line != last[0]:
+                    print(line)
+                    last[0] = line
+                time.sleep(1)
+        import threading
+        runner.start(args.lat, args.lon, args.name or "", background=True)
+        t = threading.Thread(target=watch, daemon=True)
+        t.start()
+        runner._thread.join()
+        s = runner.snapshot() or {}
+        print(f"{s.get('status')}: {s.get('base_id')}" + (f" ({s.get('error')})" if s.get("error") else ""))
+        return 0 if s.get("status") == "ready" else 1
+    if not args.id:
+        print(f"{args.action} needs a Base id (see `marswalk base list`)", file=sys.stderr)
+        return 2
+    if args.action == "realign":
+        from marswalk.bases.jobs import JobRunner
+        a = JobRunner(reg, load_eva(args.eva), log=print).realign(args.id)
+        print(f"{a['quality']}: north {a['north_m']:+.1f} m  east {a['east_m']:+.1f} m  corr {a.get('corr')}  "
+              f"spread {a.get('spread_m')} m  ({a['source']})")
+        return 0
+    if args.action == "focus":
+        reg.set_focus(args.id)
+        print(f"focused {args.id}")
+    elif args.action == "delete":
+        reg.delete(args.id)
+        print(f"deleted {args.id}")
+    return 0
+
+
+def cmd_align(args) -> int:
+    """Measure how far the terrain sits from a photo mosaic (prints only; writes nothing)."""
+    from marswalk.layers import align
+    from marswalk.sources import catalog
+    from marswalk.sources.fetch import raw_dir
+    site = load_site(args.site)
+    targets = {"basemap": (site.products.get("basemap_tiles", {}).get("url_template"),
+                           int(site.products.get("basemap_tiles", {}).get("tile_size", 256))),
+               "hirise_global": (catalog.HIRISE_GLOBAL_TILES, 512)}
+    url, px = targets[args.target]
+    if not url:
+        print("this site has no basemap tiles", file=sys.stderr)
+        return 2
+    r = align.auto(site, raw_dir(site), url_template=url, tile_px=px)
+    print(f"{args.target}: {r['quality']}  north {r['north_m']:+.1f} m  east {r['east_m']:+.1f} m (DTM map units)  "
+          f"corr {r['corr']}  spread {r['spread_m']} m  patches {r['n_patches']}")
+    cfg = site.dtm.get("basemap_offset_m")
+    if cfg:
+        print(f"configured offset: north {cfg.get('north', 0):+.1f} m  east {cfg.get('east', 0):+.1f} m")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="marswalk", description="Suited-astronaut traverse planner for Mars EVAs")
     p.add_argument("--site", default=DEFAULT_SITE, help="site TOML (default: Gale boxwork)")
+    p.add_argument("--base", help="work on this Base instead of --site (an id from `marswalk base list`)")
     p.add_argument("--eva", default=DEFAULT_EVA, help="EVA limits / cost TOML")
     sub = p.add_subparsers(dest="cmd", required=True)
+    ba = sub.add_parser("base", help="list, create, focus or delete Bases")
+    ba.add_argument("action", choices=["list", "create", "focus", "delete", "realign"])
+    ba.add_argument("id", nargs="?", help="Base id (focus, delete)")
+    ba.add_argument("--lat", type=float)
+    ba.add_argument("--lon", type=float)
+    ba.add_argument("--name")
+    ba.set_defaults(func=cmd_base)
+    ca = sub.add_parser("catalog", help="the HiRISE stereo terrain catalog: refresh, or look up a point")
+    ca.add_argument("action", choices=["refresh", "lookup"])
+    ca.add_argument("--lat", type=float)
+    ca.add_argument("--lon", type=float)
+    ca.set_defaults(func=cmd_catalog)
+    al = sub.add_parser("align", help="measure the terrain's offset from a photo mosaic (prints only)")
+    al.add_argument("--target", choices=["basemap", "hirise_global"], default="basemap")
+    al.set_defaults(func=cmd_align)
     sub.add_parser("info", help="show site, products, stops, limits").set_defaults(func=cmd_info)
     sv = sub.add_parser("serve", help="run the API for the frontend")
     sv.add_argument("--host", default="127.0.0.1")
@@ -237,8 +358,29 @@ def _warn_if_other_checkout() -> None:
               file=sys.stderr)
 
 
+def _utf8_console() -> None:
+    """Make stdout/stderr UTF-8. The CLI prints CO₂, m/s², ±, ≤ and arrows; on Windows the console defaults to
+    a legacy code page (cp1252), which raised UnicodeEncodeError mid-report unless PYTHONUTF8=1 was set.
+    Streams that are not text wrappers (e.g. replaced by a test harness) are left alone."""
+    for stream in (sys.stdout, sys.stderr):
+        enc = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if enc != "utf8" and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass  # stream already written to in an incompatible way, or closed
+
+
 def main(argv: list[str] | None = None) -> int:
+    _utf8_console()
     _warn_if_other_checkout()
     load_dotenv()
     args = build_parser().parse_args(argv)
+    if getattr(args, "base", None) and args.cmd not in ("base", "catalog"):
+        from marswalk.bases.registry import bases_dir
+        toml = bases_dir() / args.base / "site.toml"
+        if not toml.exists():
+            print(f"no Base {args.base!r} (see `marswalk base list`)", file=sys.stderr)
+            return 2
+        args.site = str(toml)
     return args.func(args)
