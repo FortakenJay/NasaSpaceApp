@@ -44,6 +44,9 @@ def test_origins_ordinals_rover_and_soundalikes():
     assert ids("how steep is the upper contact") == [("S5", False)]
     assert ids("is this far") == []                                 # "this" alone is not a place; "is" is not "S"
     assert ids("how far is the next stop", ctx(selected_stop_id="S2")) == [("S3", False)]
+    assert ids("provide the path to S3 from my location") == [("S3", False), ("here", True)]
+    assert "distance" in topics_of(normalize("provide the path to U1 from my location"))
+    assert topics_of(normalize("go to S3")) == ["go"]
 
 
 def test_topics():
@@ -96,7 +99,12 @@ def test_ask_api_on_synthetic_terrain(synthetic_site, monkeypatch):
 
     r = c.post("/api/ask", json={"question": "How far is U1 from here?", "plan_id": plan["plan_id"]}).json()
     assert r["here"]["label"] == "the rover" and r["here"]["used"] and "On foot, the safest route is" in r["answer"]
-    assert [f["properties"]["role"] for f in r["highlight"]["features"]] == ["route", "here", "to"]
+    assert [f["properties"]["role"] for f in r["highlight"]["features"]] == ["route", "back", "here", "to"]
+    assert r["go_to"]["id"] == "U1" and "Press Go to head to U1." in r["answer"]
+    commanded = c.post("/api/ask", json={"question": "provide the path to U1 from my location",
+                                         "plan_id": plan["plan_id"]}).json()
+    assert "On foot, the safest route is" in commanded["answer"] and commanded["go_to"]["id"] == u["id"]
+    assert commanded["here"]["used"]
     line = next(f for f in r["highlight"]["features"] if f["geometry"]["type"] == "LineString")
     assert len(line["geometry"]["coordinates"]) > 50 and "kilometres" not in r["answer"] and "metres" in r["speech"]
 
@@ -113,7 +121,9 @@ def test_ask_api_on_synthetic_terrain(synthetic_site, monkeypatch):
     r = c.post("/api/ask", json={"question": "how steep is it here", "selected_stop_id": "B"}).json()
     assert "slopes about" in r["answer"] and "Walkable" in r["answer"]
     r = c.post("/api/ask", json={"question": "is the plan safe", "plan_id": plan["plan_id"]}).json()
-    assert r["answer"].startswith("This walk stays inside every limit")
+    # the wall hides B from the rover's antenna: the only caution on this site
+    assert r["answer"].startswith("This walk needs care: ") and "out of radio contact" in r["answer"]
+    assert ": :" not in r["answer"]
     r = c.post("/api/ask", json={"question": "where do we go", "plan_id": plan["plan_id"], "elapsed_h": 0.3}).json()
     assert "The plan visits A at" in r["answer"] and "into the walk" in r["here"]["label"]
     assert c.post("/api/ask", json={"question": ""}).status_code == 422
@@ -157,3 +167,127 @@ def test_suit_display_moment_arithmetic(synthetic_site):
     assert start.to_end_m == pytest.approx(p["profile"]["dist_m"][-1], rel=1e-6) and start.next_id == a["id"]
     done = eink.moment(p, site, EVA, 10_000)
     assert done.to_end_m == pytest.approx(0, abs=1e-6) and done.remaining_ids == []
+
+
+def test_simulator_terrain_texture_live_eink_and_live_ask(synthetic_site):
+    import gzip
+    import io
+
+    import numpy as np
+    from PIL import Image
+    c = TestClient(create_app(site_path=str(synthetic_site), db_url="sqlite://"))
+    t = c.get("/api/sim/terrain", params={"step": 2}).json()
+    # binary URLs carry the layout version and the data stamp, so a browser never decodes a stale copy
+    assert "heights_cm" not in t and t["heights"]["url"].startswith("/api/sim/terrain.bin?step=2&v=2-")
+    assert t["fine"]["url"].startswith("/api/sim/fine.bin?v=2-")
+    hb = c.get(t["heights"]["url"]).content
+    hb = gzip.decompress(hb) if hb[:2] == b"\x1f\x8b" else hb
+    n3 = t["rows"] * t["cols"]
+    assert len(hb) == 2 * n3 + (n3 + 7) // 8
+    h = np.frombuffer(hb[: 2 * n3], dtype="<u2").reshape(t["rows"], t["cols"])
+    nogo = np.unpackbits(np.frombuffer(hb[2 * n3:], dtype=np.uint8))[:n3]
+    assert h.shape == (t["rows"], t["cols"]) and nogo.size == h.size and t["physics"]["gravity_mps2"] == pytest.approx(3.71)
+    assert h.min() == 0 and nogo.any()
+    site = c.get("/api/site").json()
+    start = next(s for s in site["stops"] if s["kind"] == "start")
+    b = next(s for s in site["stops"] if s["id"] == "B")
+    # the frame: the rover is the origin, B is where its lat/lon says (x east, z south)
+    bx, bz = (b["lon"] - t["lon0"]) * t["kx"], -(b["lat"] - t["lat0"]) * t["kz"]
+    assert t["lat0"] == start["lat"] and bz > 0                                # B is south of the rover
+    ci, ri = round((bx - t["x0"]) / t["dx"]), round((bz - t["z0"]) / t["dz"])
+    assert 0 <= ci < t["cols"] and 0 <= ri < t["rows"]
+    tex = Image.open(io.BytesIO(c.get("/api/sim/texture.png", params={"step": 2}).content))
+    assert abs(tex.size[0] / tex.size[1] - t["cols"] / t["rows"]) < 0.02
+    assert c.get("/api/sim/texture.png", params={"kind": "hazard", "step": 2}).status_code == 200
+
+    # the 1 m physics grid: same cells, same rough/sand/off-limits as the stack the route search uses
+    f = t["fine"]
+    raw = c.get(f["url"]).content
+    raw = gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
+    n = f["rows"] * f["cols"]
+    nb = (n + 7) // 8
+    assert len(raw) == 5 * n + 3 * nb
+    walk = np.frombuffer(raw[: 2 * n], dtype="<u2").reshape(f["rows"], f["cols"])
+    dtm = np.frombuffer(raw[2 * n: 4 * n], dtype="<u2").reshape(f["rows"], f["cols"])
+    rough = np.frombuffer(raw[4 * n: 5 * n], dtype=np.uint8)
+    fine_nogo = np.unpackbits(np.frombuffer(raw[5 * n + nb: 5 * n + 2 * nb], dtype=np.uint8))[:n]
+    shadow = np.unpackbits(np.frombuffer(raw[5 * n + 2 * nb:], dtype=np.uint8))[:n].reshape(f["rows"], f["cols"])
+    assert walk.max() > 0 and rough.max() > 0 and fine_nogo.sum() >= 0
+    assert min(int(walk.min()), int(dtm.min())) == 0 and dtm.max() > walk.max() - 100    # one zero for both
+    assert shadow.any() and not shadow.all()
+    ph = t["physics"]
+    assert ph["roughness_penalty_per_m"] == pytest.approx(2.0) and ph["sand_penalty"] == pytest.approx(1.2)
+    # one fine cell per stack pixel, and B lands inside the fine grid too
+    assert f["dx"] * 2 == pytest.approx(t["dx"], rel=0.02) and f["dz"] * 2 == pytest.approx(t["dz"], rel=0.02)
+    bi, bj = round((bz - f["z0"]) / f["dz"]), round((bx - f["x0"]) / f["dx"])
+    assert 0 <= bj < f["cols"] and 0 <= bi < f["rows"]
+    assert shadow[bi, bj] == 1                                                 # the wall hides B from the rover
+
+    s = c.get("/api/sim/sun").json()
+    assert s["lmst_h"] == pytest.approx(9.0, abs=1e-3) and len(s["az_el"]) == 301 and 0 < s["az_el"][0][0] < 180
+
+    plan = c.post("/api/plan", json={"cost": "metabolic", "order": "fixed"}).json()
+    a = plan["timeline"][1]
+    live = {"lat": (start["lat"] + a["lat"]) / 2, "lon": (start["lon"] + a["lon"]) / 2, "walked_m": 25.0,
+            "energy_kj": 40.0, "elapsed_h": 0.1}
+    r = c.get("/api/eink.png", params=live)
+    assert r.status_code == 200 and Image.open(io.BytesIO(r.content)).size == (800, 480)
+    r = c.get("/api/eink.png", params={**live, "visited": a["id"]})
+    assert r.status_code == 200
+
+    q = c.post("/api/ask", json={"question": "how far is the next stop", "plan_id": plan["plan_id"], "elapsed_h": 0.1,
+                                 "here_lat": live["lat"], "here_lon": live["lon"], "visited": []}).json()
+    assert q["here"]["label"].startswith("your position") and q["answer"].startswith(f"{a['id']} (")
+    q = c.post("/api/ask", json={"question": "how far is the next stop", "plan_id": plan["plan_id"], "elapsed_h": 0.1,
+                                 "here_lat": live["lat"], "here_lon": live["lon"], "visited": [a["id"]]}).json()
+    assert q["answer"].startswith(f"{plan['timeline'][2]['id']} (")
+
+
+def test_live_moment_counts_progress_and_schedule(synthetic_site):
+    from marswalk import eink
+    from marswalk.export.payload import plan_payload
+    from marswalk.layers.stack import build_stack
+    from marswalk.route.plan import build_plan
+    site = load_site(synthetic_site)
+    st = build_stack(site, EVA, use_cache=False)
+    p = plan_payload(build_plan(site, EVA, st, "metabolic"), st)
+    tl = p["timeline"]
+    a = tl[1]
+    m, ahead = eink.live_moment(p, site, EVA, st, None, a["lat"], a["lon"], a["arrive_min"], 100.0, 50.0, [])
+    assert m.at_stop == a["id"] and m.to_next_m < 10 and abs(m.schedule_delta_min) < 1     # on plan at the stop
+    assert m.to_end_m == pytest.approx(p["profile"]["dist_m"][-1] - eink._dist_at(p, a["arrive_min"]), rel=0.05)
+    late, _ = eink.live_moment(p, site, EVA, st, None, a["lat"], a["lon"], a["arrive_min"] + 20, 100.0, 50.0, [])
+    assert late.schedule_delta_min == pytest.approx(20, abs=1)
+    done, _ = eink.live_moment(p, site, EVA, st, None, a["lat"], a["lon"], a["depart_min"], 100.0, 50.0, [a["id"]])
+    assert done.next_id == tl[2]["id"] and done.stop_index == 1 and len(ahead) > 2
+
+
+def test_simulator_walking_grid_is_the_planners_own(synthetic_site):
+    """The simulator's physics reads the route search's own layers, cell for cell."""
+    import numpy as np
+
+    from marswalk import sim
+    from marswalk.layers.stack import build_stack
+    site = load_site(synthetic_site)
+    st = build_stack(site, EVA, use_cache=False)
+    stops, start = list(site.stops), site.start
+    pts = [(s.lat, s.lon) for s in stops]
+    meta = sim.fine_meta(site, st, start.lat, start.lon, pts)
+    raw = sim.fine_bytes(st, start.lat, start.lon, pts)
+    n, nb = meta["rows"] * meta["cols"], (meta["rows"] * meta["cols"] + 7) // 8
+    rough = np.frombuffer(raw[4 * n: 5 * n], dtype=np.uint8).reshape(meta["rows"], meta["cols"])
+    nogo = np.unpackbits(np.frombuffer(raw[5 * n + nb: 5 * n + 2 * nb], dtype=np.uint8))[:n].reshape(meta["rows"], meta["cols"])
+    walk = np.frombuffer(raw[: 2 * n], dtype="<u2").reshape(meta["rows"], meta["cols"]).astype(float) / 100
+    r0, _, c0, _ = sim.area(st, [(start.lat, start.lon), *pts])
+    fr = sim.frame(site, start.lat, start.lon)
+    for s in stops:
+        r, c = st.grid.latlon_to_rc(s.lat, s.lon)
+        # the same cell, found the browser's way: lat/lon -> local metres -> grid index
+        x, z = (s.lon - fr["lon0"]) * fr["kx"], -(s.lat - fr["lat0"]) * fr["kz"]
+        ci, ri = round((x - meta["x0"]) / meta["dx"]), round((z - meta["z0"]) / meta["dz"])
+        assert (ri, ci) == (r - r0, c - c0)
+        assert rough[ri, ci] == round(min(float(st.roughness_m[r, c]) * 100, 255))
+        assert bool(nogo[ri, ci]) == bool(st.nogo[r, c])
+        # walk heights keep the planner's grades: the same climb to the next cell east
+        ref = st.walk_elev_m if st.walk_elev_m is not None else st.elevation_m
+        assert walk[ri, ci + 1] - walk[ri, ci] == pytest.approx(float(ref[r, c + 1] - ref[r, c]), abs=0.011)

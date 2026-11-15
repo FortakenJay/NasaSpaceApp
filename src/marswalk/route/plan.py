@@ -19,6 +19,7 @@ from typing import Sequence
 
 import numpy as np
 
+from marswalk import consumables
 from marswalk.config import EVAConfig, SiteConfig, Stop
 from marswalk.cost.base import model_from_eva
 from marswalk.layers.stack import LayerStack
@@ -73,6 +74,8 @@ class EVAPlan:
     walking_time_s: float = 0.0
     profile: dict = field(default_factory=dict)       # arrays along the route (see _profile)
     budgets: dict = field(default_factory=dict)       # usable time/energy after the reserve
+    exposure: dict = field(default_factory=dict)      # radio shadow and shelter reach (route.exposure)
+    consumables: dict = field(default_factory=dict)   # what runs out first (marswalk.consumables)
 
 
 def usable_budgets(eva: EVAConfig) -> dict:
@@ -86,6 +89,13 @@ def walkback_field(stack: LayerStack, eva: EVAConfig, start_rc: tuple[int, int],
     """Reverse cost field from the rover: walk-back cost/time/energy from every cell within reach."""
     radius = 1.1 * float(eva.eva["max_distance_from_rover_m"])   # nobody may be farther out than the walk limit
     return cost_field(stack, model_from_eva(eva, cost_model_name), start_rc, reverse=True, max_radius_m=radius)
+
+
+def radio_field(stack: LayerStack, eva: EVAConfig, start_rc: tuple[int, int], radius_m: float = 3396190.0) -> np.ndarray:
+    """Radio line of sight to the rover's antenna over the same reach as the walk-back field (layers.radio)."""
+    from marswalk.layers.radio import contact_grid
+    reach = 1.1 * float(eva.eva["max_distance_from_rover_m"])
+    return contact_grid(stack, start_rc, eva.comms, reach, radius_m)
 
 
 def _profile(stack: LayerStack, legs: list[Leg], leg_t0: list[float], leg_e0: list[float], back: Field,
@@ -116,8 +126,11 @@ def _profile(stack: LayerStack, legs: list[Leg], leg_t0: list[float], leg_e0: li
 
 def build_plan(site: SiteConfig, eva: EVAConfig, stack: LayerStack, cost_model_name: str | None = None,
                stop_ids: Sequence[str] | None = None, points: Sequence[Stop] | None = None,
-               order: str | None = None, back: Field | None = None) -> EVAPlan:
+               order: str | None = None, back: Field | None = None, radio: np.ndarray | None = None,
+               offlimits: tuple | None = None) -> EVAPlan:
+    """`offlimits` = (frequency grid, window) from layers.uncertainty: adds the route's metres on uncertain ground."""
     from marswalk.constraints.eva import Violation, check_plan
+    from marswalk.route.exposure import exposure, marginal
 
     model = model_from_eva(eva, cost_model_name)
     margin = float(eva.eva.get("time_margin_factor", 1.0))
@@ -205,5 +218,15 @@ def build_plan(site: SiteConfig, eva: EVAConfig, stack: LayerStack, cost_model_n
                    total_time_s=t, total_distance_m=dist, total_energy_kj=e, violations=violations,
                    walking_time_s=walk_t, budgets=budgets,
                    profile=_profile(stack, legs, leg_t0, leg_e0, back, margin, budgets))
-    plan.violations = violations + check_plan(plan, eva, radius_m=float(site.body["radius_m"]))
+    if radio is None:
+        radio = radio_field(stack, eva, start_rc, float(site.body["radius_m"]))
+    ex = exposure(plan, back, radio, eva)
+    plan.exposure = ex["summary"]
+    plan.consumables = consumables.plan_summary(eva, t, e)
+    plan.violations = violations + check_plan(plan, eva, radius_m=float(site.body["radius_m"])) + ex["violations"]
+    if offlimits is not None:
+        sigma = float((site.dtm.get("uncertainty") or {}).get("vertical_sigma_m", 0.3))
+        mg = marginal(plan, offlimits, float(stack.grid.pixel_m), sigma)
+        plan.exposure.update(mg["summary"])
+        plan.violations += mg["violations"]
     return plan

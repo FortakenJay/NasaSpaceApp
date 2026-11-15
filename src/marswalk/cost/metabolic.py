@@ -2,7 +2,7 @@
 
 Route cost = metabolic energy (kJ). The walking model lives in cost.physics (speed vs grade, Santee-form
 metabolic power, gravity scaling, roughness and sand multipliers) and is shared with the weighted model.
-params = the 7-value physics block (cost.physics.PHYSICS_ORDER).
+params = the 8-value physics block (cost.physics.PHYSICS_ORDER).
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ PARAM_ORDER = ph.PHYSICS_ORDER
 @numba.njit(cache=True)
 def kernel(params, dz_m, run_m, slope5_deg, rough_m, sand):
     t, e = ph.edge_time_energy(params[0], params[1], params[2] + params[3], params[4], params[5], params[6],
-                               dz_m, run_m, rough_m, sand)
+                               dz_m, run_m, rough_m, sand, params[7])
     return e, t, e
 
 

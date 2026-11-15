@@ -7,6 +7,9 @@ const RULE_NAMES: Record<string, string> = {
   max_distance_from_rover: 'Distance from the rover',
   walkback_reserve: 'Walk-home reserve',
   unreachable: 'No walkable route',
+  radio_shadow: 'Radio',
+  storm_shelter: 'Storm shelter',
+  marginal_ground: 'Uncertain ground',
 };
 
 interface Props {
@@ -75,6 +78,17 @@ export function PlanResult({ result, usableH }: Props) {
         Steepest step on the route: {num('max_grade_deg')}° (limit 20°). Steepest ground crossed: {num('max_slope_deg')}° (areas
         above 25° are off limits).
       </p>
+      {s.radio_shadow_min !== undefined && (
+        <p className="note">
+          Out of radio contact with the rover: {formatMinutes(num('radio_shadow_min'))} of the walk
+          {num('radio_shadow_min') > 0 ? ` (longest stretch ${formatMinutes(num('radio_longest_shadow_min'))})` : ''}. Solar
+          storm: the walk home never takes longer than {formatMinutes(num('shelter_max_walk_home_min'))}
+          {num('shelter_beyond_min') > 0
+            ? `, but for ${formatMinutes(num('shelter_beyond_min'))} it is longer than the ${num('shelter_lead_min')} min warning.`
+            : `, inside the ${num('shelter_lead_min')} min warning everywhere.`}{' '}
+          {s.limiting_consumable ? `Runs out first: ${String(s.limiting_consumable).toLowerCase()} (${s.consumables_used} used).` : ''}
+        </p>
+      )}
       <details className="options">
         <summary>Timeline, stop by stop</summary>
         <table className="timeline">

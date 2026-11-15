@@ -1,9 +1,55 @@
 # MarsWalk Traverse Planner: Architecture
 
-Status: **v0.4** (2026-11-14). The terrain pipeline (M1-M4) is implemented and tested on synthetic terrain (42 tests):
-fetch, layers, numba cost kernels, least-cost search, plan assembly, walk-back safe zone, overlays, and the app views for
-them. It has **not been run on the real Gale data yet** (the build sandbox cannot reach the NASA hosts): run
-`marswalk fetch` and compare `marswalk layers` with the M2 reference values below. Open: M5 space weather, M6 3-D table.
+Status: **v1.1** (2026-11-15). M1-M5 are built and run on the real Gale data: fetch, layers, numba cost kernels,
+least-cost search, plan assembly, walk-back safe zone, space weather, overlays, voice, suit display, audit and the walk
+simulator. 99 pytest tests; `marswalk audit` 38 of 38 checks plus one finding; 25 simulator checks in the browser
+(`?qa=1`). Open: M6 3-D planning table (spec only). The sections below are newest first; the v0.3 design and the
+milestone table further down are kept as the record of how it was planned.
+
+### Added in v1.1 (operations layers, gait, consumables, engine round)
+- **Radio shadow** (`layers/radio.py`): numba ray sweep of line of sight from the rover's antenna (`[comms]` heights,
+  Mars curvature) over the walk-back reach; `route.plan.radio_field`, cached in the API like the walk-back field;
+  `/api/layers/radio.png`; 2 bits per cell (`fine.bin`) for the simulator.
+- **Exposure** (`route/exposure.py`): minutes of the plan out of radio contact, minutes beyond storm-shelter reach
+  (`eva.sep_warning_lead_min`, Löwe et al. 2025), and metres on uncertain ground; summary fields and cautions
+  (`radio_shadow`, `storm_shelter`, `marginal_ground`). `/api/layers/shelter.png`.
+- **Terrain uncertainty** (`layers/uncertainty.py`): off-limits frequency over 20 perturbed terrains on the walk area
+  (`products.dtm.uncertainty` in the site config); `/api/layers/uncertain.png` with its own bounds.
+- **Gait limit** (`cost/physics.py`): an 8th physics parameter `walk_speed_cap_mps` = √(Fr g L) from
+  `walk_run_froude`, `leg_length_m` (off by default); both kernels and `physics.ts` take it.
+- **Consumables** (`consumables.py`): the limiting consumable in the plan summary and on the suit display.
+- **Clock**: `sun.mars_sol_date`, `sun.local_sol`; `track()` returns `sol`; the suit display footer shows sol and LTST.
+- **Audit findings**: `Check.finding` marks a model assumption compared with data (⚠️, never a failure).
+- **Simulator data**: `terrain.bin` (3 m heights + off-limits, binary instead of base64 JSON) and `fine.bin` v2 (walk
+  heights, terrain heights, roughness, sand, off-limits, radio shadow); URLs versioned by `sim.FORMAT` and the data stamp.
+- **Engine** (`frontend/src/sim/`): fixed 1/60 s ticks with interpolated drawing, sleep when idle, HUD snapshots only on
+  visible change (`useSyncExternalStore`), 1 m near-field patch + 3/6/12 m tiles with skirts, optional 1 m normal map,
+  synthesized sound (`audio.ts`), in-browser QA (`qa.ts`).
+- **Parity test** (`tests/test_physics_parity.py`): Node runs `physics.ts` against `cost/physics.py` directly.
+
+### Added in v1.0 (walk simulator, live position)
+- **`sim.py` + `GET /api/sim/terrain|texture.png`:** a window around the stops (400 m margin) as 3 m blocks: mean
+  heights as uint16 cm (base64), off-limits bits (a block is no-go if any 1 m cell is), the local frame (x east,
+  z south, metres from the rover) and physics constants from `configs/`; the texture is the orthophoto shifted by
+  `basemap_offset_m` and tinted (hillshade where there is no photo), or the off-limits overlay. Cached per raw-data
+  stamp.
+- **Live position:** `eink.live_moment()` routes A* from (lat, lon) to the next unvisited stop and reports schedule
+  delta against the plan; `/api/eink.*` take `lat, lon, walked_m, energy_kj, visited`. `AskContext.live` makes "here"
+  the walker's position and skips visited stops.
+- **Frontend `src/sim/` (Three.js 0.170, lazy-loaded):** `terrain.ts` decodes the package (bilinear heights, no-go
+  lookups); `physics.ts` ports the speed and metabolic models (matches Python to 3 d.p.); `engine.ts` steps mission
+  time in 0.5 s slices (speed from the grade 1 m ahead, power, work at 250 W, idle power, reserve and dry tank) and
+  renders sky dome, fog, shadowed sun, route (Line2), trail, beacons and rover; `SimulationView.tsx` is the HUD
+  (status, minimap, distances, live e-ink, Ask with mic, help, pause, debrief). The game reaches the backend only
+  through `src/api`, like the rest of the app. QA: `frontend/src/sim/qa.ts`, run in the app with `?qa=1` (v1.1).
+- **Physics = planner, step for step:** `sim.fine_bytes()` / `GET /api/sim/fine.bin` ship the stack's own 1 m
+  `walk_elev_m`, `roughness_m`, `sand` and `nogo` for the window; `WalkGrid` reads grades 1 m ahead on the walk surface,
+  speed `walk_speed(grade) / ((1 + k_rough * rough) * sand_pen)` along the slope, power at the model speed, and refuses
+  grades past `max_grade_deg` (`physics.ts edgeTimeEnergy` == `cost/physics.py edge_time_energy`). The 3 m mesh is only
+  drawn.
+- **Sun:** `sun.py` is Mars24 (Allison & McEwen 2000), tested against both GISS worked examples; `GET /api/sim/sun` tracks
+  azimuth/elevation every 2 min from the next `[eva] start_lmst_h` at the rover. The engine drives the directional
+  light, hemisphere light, fog, sky shader (blue halo when low) and a 0.35° Sun disc from it.
 
 ### Added in v0.9 (voice, suit display, audit)
 - **`ask.py` + `POST /api/ask`:** keyword parser (topics + places, speech-to-text spellings) answering from the stored
@@ -171,14 +217,19 @@ React components ──hooks──► src/api/queries.ts ──► src/api/endpo
 | GET | `/api/walkback?lat&lon&elapsed_h&cost` | `{reachable, safe, walkback_min, walkback_kj, margin_min, route}` for one point | ✅ (no hook yet) |
 | GET | `/api/layers` | `[{name, key, url, bounds:[lon_min,lat_min,lon_max,lat_max], opacity}]` | ✅ `useLayers` (`[]` until fetched) |
 | GET | `/api/layers/{name}.png` | overlay PNG (hillshade, slope5, roughness, ti, nogo, safezone`?elapsed_h=`) | ✅ |
-| GET | `/api/status` | `{level, reason, …}` | 501 M5 · `useSpaceWeather` |
+| GET | `/api/status` | `{level, reason, …}` | ✅ `useSpaceWeather` (M5 built in v0.5) |
+| GET | `/api/sim/terrain`, `/api/sim/terrain.bin`, `/api/sim/fine.bin`, `/api/sim/sun`, `/api/sim/texture.png` | the simulator's data (see v1.0 and v1.1 above) | ✅ |
+| GET | `/api/layers/{radio,shelter,uncertain}.png` | operations overlays (v1.1) | ✅ |
 
 Not-yet-built stages answer `501 {"milestone": "Mx", "detail": …}`; unknown stops/plans answer 404; invalid bodies 422.
 The app shows these messages instead of failing. TypeScript mirrors live in `frontend/src/api/types.ts`; keep them in
 sync with `export/payload.py` and `db/repo.py`.
 
 ## Quality checks
-- `pytest`: 33 tests (geo, config, pure logic, API + DB on an in-memory SQLite per test, architecture boundaries).
+- `pytest`: 99 tests (geo, config, pure logic, pipeline on synthetic terrain, API + DB on an in-memory SQLite per
+  test, architecture boundaries, audit, Sun, physics parity with the TypeScript, sound absorption).
+- `marswalk audit`: 38 independent recomputations on the real data, plus model-vs-data findings.
+- Simulator: 25 in-browser checks (`?qa=1`).
 - `npm --prefix frontend run lint`: ESLint (typescript-eslint, react-hooks, API-boundary rules).
 - `npm --prefix frontend run doctor`: React Doctor, **100/100** on 2026-11-13. It first found 3 issues, all fixed: the map
   click listener and OL map weren't disposed on unmount, a constant was exported from a component file, and the

@@ -2,7 +2,8 @@
 
 `docs/graph/` holds a knowledge graph of the whole codebase, built by
 [graphify](https://github.com/safishamsi/graphify) from the code's syntax trees (no AI service involved):
-**857 nodes, 2,323 edges, 40 communities** across the Python backend, the React app, the tests and the firmware.
+**1,037 nodes, 2,433 edges, 63 communities** across the Python backend, the React app and its 3-D simulator, and
+the tests.
 
 - `graph.html`: open it in a browser to explore. Nodes are functions, classes and files; edges are calls, imports
   and uses; colours are communities.
@@ -15,12 +16,14 @@ The most connected nodes are the spine of the system:
 
 | Node | Edges | Role |
 |---|---|---|
-| `create_app()` | 67 | The API: every feature meets here |
-| `build_stack()` | 44 | Terrain layers: everything downstream reads them |
-| `load_site()` | 35 | Site config: one file per place on Mars |
-| `build_plan()` | 35 | Plan: route, timeline, budgets, checks |
-| `Raster` / `GeoGrid` | 34 / 29 | Georeferenced arrays shared by fetch, layers and routing |
-| `AskContext` / `answer()` | 27 / 23 | Voice questions |
+| `create_app()` | 57 | The API: every feature meets here |
+| `SimEngine` | 35 | The walk simulator: scene, controls and the mission-time loop |
+| `load_site()` | 28 | Site config: one file per place on Mars |
+| `build_plan()` | 27 | Plan: route, timeline, budgets, checks |
+| `Raster` / `GeoGrid` | 27 / 23 | Georeferenced arrays shared by fetch, layers and routing |
+| `build_stack()` | 26 | Terrain layers: everything downstream reads them |
+| `AskContext` / `answer()` | 25 / 20 | Voice questions |
+| `App()` | 25 | The planner's screen |
 
 ## Rebuild it
 

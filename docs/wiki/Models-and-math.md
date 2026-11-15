@@ -127,6 +127,47 @@ measurements found the same shift:
 `products.dtm.basemap_offset_m` applies the shift at load time. With the merged DEM present, the remaining offset is
 measured again at every build (512 m patch, ±60 m search, sub-metre peak fit) and applied when r ≥ 0.9.
 
+## Gait limit (optional)
+
+People switch from walking to running near a fixed Froude number Fr = v² / (g L) (Kram, Domingo & Ferris 1997). With
+`walk_run_froude` set, walking speed is capped at
+
+\[ v_{max} = \sqrt{Fr \, g \, L} = \sqrt{0.56 \times 3.71 \times 0.89} = 1.36 \text{ m/s} \]
+
+(Fr and L from Kram's 0.4 g condition, Table 1: 1.39 ± 0.06 m/s measured). Off by default; the audit reports the
+uncapped 1.6 m/s as a finding.
+
+## Radio line of sight
+
+From the rover's antenna (ground + `rover_antenna_m`) a ray per azimuth keeps the steepest angle the ground has
+reached, with the ground lowered by Mars's curvature, d² / 2R. A cell is in contact when the suit antenna on it
+(ground + `suit_antenna_m`) is at or above that angle. No relay; no diffraction over ridges.
+
+## Storm shelter
+
+The walk home from a cell is the walk-back field's time × `time_margin_factor`. The cell is out of shelter reach when
+that exceeds `sep_warning_lead_min` = 30 min (Löwe et al. 2025: RAD-based nowcasting gave at least 30 min before the
+peak and 90 % of the dose for every SEP event at Gale since 2012).
+
+## Terrain uncertainty
+
+Each of 20 draws adds noise n = G_σc * w to the elevations (white noise w smoothed with a Gaussian of
+`noise_corr_px`, rescaled to standard deviation `vertical_sigma_m` = 0.3 m) and, with probability
+`registration_sigma_m` / pixel, shifts the terrain by one pixel per axis; then slope (1 m, 5 m), roughness and the same
+hazard limits. Off-limits frequency f = (draws off limits) / 20: always f ≥ 0.95, sometimes 0.05 < f < 0.95.
+
+## Consumables
+
+Per kJ of metabolic energy E: cooling water E / 2 454 kJ/kg (latent heat of vaporisation at 20 °C); CO₂
+(E / 20.19 kJ/L) × 0.82 × 1.977 g/L; oxygen stays time-based. Each consumable keeps the 30 % reserve; the one with
+the least time left at the current mean power is shown and drives "turn back within".
+
+## Sound in the simulator
+
+Rover hum: gain ∝ 1/d (full within 6 m), delay d / 240 m/s, low-pass at the frequency f where Martian air has absorbed
+20 dB: e^(−α(f) d) = 0.1, with α = 0.21, 0.34, 0.43 m⁻¹ at 4.5, 8.5, 13 kHz (Maurice et al. 2022) and linear to zero
+below.
+
 ## Sources
 
 - Johnson, A. W., Hoffman, J. A., Newman, D. J., et al. (2010). *An Integrated Traverse Planner and Analysis Tool for
@@ -137,3 +178,9 @@ measured again at every build (512 m patch, ±60 m search, sub-metre peak fit) a
   Curiosity rover.* Science 343(6169).
 - Parker, T. J., & Calef, F. J. (2016). USGS Astrogeology: *Mars MSL Gale Merged DEM 1m* (v3).
 - Caloric equivalent of oxygen: 4.825 kcal/L at RQ 0.82 (Lusk table; Weir equation).
+- Kram, R., Domingo, A., & Ferris, D. P. (1997). *Effect of reduced gravity on the preferred walk-run transition
+  speed.* Journal of Experimental Biology 200: 821–826.
+- Löwe, J. L., et al. (2025). *Nowcasting Solar Energetic Particle Events for Mars Missions.* Space Weather,
+  doi:10.1029/2025SW004372.
+- Sutton, S. S., et al. (2022). *Revealing Active Mars with HiRISE Digital Terrain Models.* Remote Sensing 14: 2403.
+- Maurice, S., et al. (2022). *In situ recording of Mars soundscape.* Nature 605: 653–658.

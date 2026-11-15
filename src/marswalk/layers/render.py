@@ -19,7 +19,10 @@ LAYERS = {
     "ti": ("Thermal inertia (THEMIS)", 0.5),
     "nogo": ("No-go (hard limits)", 0.55),
     "safezone": ("Walk-back safe zone", 0.45),
+    "radio": ("Radio shadow", 0.55),
+    "shelter": ("Storm shelter reach", 0.5),
 }
+OPS_LAYERS = ("safezone", "radio", "shelter")   # computed from the rover, not from the terrain alone
 
 
 TI_RANGE = (150.0, 600.0)   # fixed colour scale: dust and loose sand at the low end, bedrock at the high end
@@ -120,12 +123,35 @@ def safezone_png(frac: np.ndarray) -> bytes:
     return _png(rgba)
 
 
+def radio_png(grid: np.ndarray) -> bytes:
+    """Violet where terrain blocks the line of sight to the rover's antenna; clear where the crew can call the rover."""
+    from marswalk.layers.radio import SHADOW
+    k = overlay_step(grid.shape)
+    g = grid[::k, ::k]
+    rgba = np.zeros((*g.shape, 4), dtype=np.uint8)
+    rgba[g == SHADOW] = (110, 70, 220, 200)
+    return _png(rgba)
+
+
+def shelter_png(back, eva) -> bytes:
+    """Magenta where the walk home (x margin) takes longer than the solar-storm warning: a crew there would still be
+    outside when the dose arrives. Clear inside shelter reach and beyond the walk range."""
+    from marswalk.route.exposure import DEFAULT_LEAD_MIN
+    k = overlay_step(back.time_s.shape)
+    t = back.time_s[::k, ::k] * float(eva.eva.get("time_margin_factor", 1.0))
+    lead_s = 60.0 * float(eva.eva.get("sep_warning_lead_min", DEFAULT_LEAD_MIN))
+    rgba = np.zeros((*t.shape, 4), dtype=np.uint8)
+    with np.errstate(invalid="ignore"):
+        rgba[np.isfinite(t) & (t > lead_s)] = (215, 50, 150, 190)
+    return _png(rgba)
+
+
 def bounds_lonlat(stack: LayerStack) -> list[float]:
     lat_min, lon_min, lat_max, lon_max = stack.grid.bounds_latlon()
     return [lon_min, lat_min, lon_max, lat_max]
 
 
-def layer_notes(stack: LayerStack) -> dict[str, str]:
+def layer_notes(stack: LayerStack, shelter_lead_min: float = 30.0) -> dict[str, str]:
     """One plain sentence per overlay about what it shows on THIS terrain (shown in the map key)."""
     notes = {}
     if np.isfinite(stack.ti).any():
@@ -140,6 +166,11 @@ def layer_notes(stack: LayerStack) -> dict[str, str]:
                          "has no trusted 1 m terrain, so routes cannot be planned there.")
     else:
         notes["nogo"] = f"{float(np.mean(stack.nogo)) * 100.0:.0f}% of this area is off limits (too steep or too rough)."
+    notes["radio"] = ("Violet: a ridge stands between the suit radio and the rover's antenna, so the crew cannot call the "
+                      "rover from there. Line of sight only, antenna heights from configs/eva [comms].")
+    notes["shelter"] = (f"Magenta: the walk home takes longer than the {shelter_lead_min:.0f} min warning a crew gets before a "
+                        "solar particle storm's dose arrives (Löwe et al. 2025). Everywhere else the crew can reach the "
+                        "rover in time.")
     return notes
 
 
@@ -154,10 +185,10 @@ def coverage_note(stack: LayerStack) -> str:
     return f"{stack.terrain_note.capitalize()}, so it is not used. {base}" if stack.terrain_note else base
 
 
-def layer_list(stack: LayerStack, has_ti: bool = True) -> list[dict]:
+def layer_list(stack: LayerStack, has_ti: bool = True, shelter_lead_min: float = 30.0) -> list[dict]:
     b = bounds_lonlat(stack)
-    notes = layer_notes(stack)
+    notes = layer_notes(stack, shelter_lead_min)
     cov = coverage_note(stack)
     return [{"name": label, "key": key, "url": f"/api/layers/{key}.png", "bounds": b, "opacity": opacity,
-             "note": (notes.get(key, "") + " " + cov).strip() if key != "safezone" else notes.get(key, "")}
+             "note": (notes.get(key, "") + " " + cov).strip() if key not in OPS_LAYERS else notes.get(key, "")}
             for key, (label, opacity) in LAYERS.items() if key != "ti" or has_ti]

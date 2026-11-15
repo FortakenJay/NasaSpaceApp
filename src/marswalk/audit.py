@@ -26,10 +26,12 @@ class Check:
     got: float | str
     ok: bool
     how: str          # formula / source, one line
+    finding: bool = False   # a model assumption compared with published data: reported, never a failure
 
     def row(self) -> str:
         fmt = lambda v: f"{v:,.4g}" if isinstance(v, float) else str(v)
-        return f"| {'✅' if self.ok else '❌'} | {self.name} | {fmt(self.expected)} | {fmt(self.got)} | {self.how} |"
+        mark = "✅" if self.ok else ("⚠️" if self.finding else "❌")
+        return f"| {mark} | {self.name} | {fmt(self.expected)} | {fmt(self.got)} | {self.how} |"
 
 
 def _close(a: float, b: float, rel: float = 0.0, abs_: float = 0.0) -> bool:
@@ -78,6 +80,96 @@ def check_constants(site: SiteConfig, eva: EVAConfig) -> list[Check]:
     exp_up = (3.28 * m * g / 9.81 + 71.1) * (0.661 * v10 * math.cos(math.radians(10)) + 0.115) + 3.5 * m * g * v10 * math.sin(math.radians(10))
     out.append(Check("Walking model", "Power on a 10° climb (W)", exp_up, up, _close(up, exp_up, rel=1e-9),
                      "Santee uphill term 3.5·m·g·v·sin θ"))
+    # Gait at 0.38 g: Kram, Domingo & Ferris 1997 (J. Exp. Biol. 200: 821), Table 1, 0.4 g: 1.39 ± 0.062 m/s (S.E.M.).
+    from marswalk.cost.physics import walk_speed_cap
+    met = eva.cost.get("metabolic", {})
+    cap = walk_speed_cap({"gravity_mps2": g, **met})
+    top = min(walk_speed_mps(0.0), cap)
+    out.append(Check("Walking model", "Top walking speed vs measured walk-run switch at 0.4 g (m/s)", "≤ 1.39 ± 0.12",
+                     round(top, 2), top <= 1.39 + 2 * 0.062,
+                     "Kram et al. 1997, Table 1 (unsuited, 2 S.E.M.); faster than this people choose to run. "
+                     + ("Gait limit on." if math.isfinite(cap) else "Gait limit off: cost.metabolic.walk_run_froude = 0"),
+                     finding=True))
+    cap56 = walk_speed_cap({"gravity_mps2": g, "walk_run_froude": 0.56, "leg_length_m": 0.89})
+    out.append(Check("Walking model", "Gait limit at Froude 0.56, leg 0.89 m (m/s)", round(math.sqrt(0.56 * g * 0.89), 4),
+                     round(cap56, 4), _close(cap56, math.sqrt(0.56 * g * 0.89), rel=1e-12),
+                     "v = √(Fr·g·L), Kram et al. 1997 inverted-pendulum limit"))
+    lead = float(eva.eva.get("sep_warning_lead_min", 30.0))
+    out.append(Check("Constants", "Solar storm warning before the dose arrives (min)", 30.0, lead, lead <= 30.0,
+                     "Löwe et al. 2025, Space Weather: ≥ 30 min from RAD nowcasting at Gale (more would be optimistic)"))
+    return out
+
+
+def check_operations(site: SiteConfig, eva: EVAConfig, stack, plan, payload: dict, radio) -> list[Check]:
+    """Radio line of sight, shelter reach and local gravity, each recomputed another way."""
+    from marswalk.layers.radio import CONTACT, DEFAULTS, SHADOW
+    from marswalk.route.astar import snap
+    out: list[Check] = []
+    R = float(site.body["radius_m"])
+    s = payload["summary"]
+    # Radio: the sweep against a direct line from the rover's antenna to the suit, sampled every half metre.
+    comms = {**DEFAULTS, **eva.comms}
+    z = stack.elevation_m
+    r0, c0 = snap(stack, stack.grid.latlon_to_rc(site.start.lat, site.start.lon))
+    za = float(z[r0, c0]) + float(comms["rover_antenna_m"])
+    px = float(stack.grid.pixel_m)
+    rng = np.random.default_rng(1)
+    reach_px = 1.1 * float(eva.eva["max_distance_from_rover_m"]) / px
+    agree = n = 0
+    for _ in range(2000):
+        if n >= 200:
+            break
+        a, dpx = rng.uniform(0, 2 * math.pi), rng.uniform(2, reach_px)
+        r, c = int(round(r0 - math.cos(a) * dpx)), int(round(c0 + math.sin(a) * dpx))
+        if not (0 <= r < z.shape[0] and 0 <= c < z.shape[1]) or radio[r, c] == 0 or not np.isfinite(z[r, c]):
+            continue
+        dpx = math.hypot(r - r0, c - c0)
+        d_t = dpx * px
+        tgt = (float(z[r, c]) + float(comms["suit_antenna_m"]) - d_t * d_t / (2 * R) - za) / d_t
+        steps = int(dpx * 2)
+        blocked = False
+        for i in range(1, steps):
+            f = i / steps
+            rr, cc = int(round(r0 + (r - r0) * f)), int(round(c0 + (c - c0) * f))
+            d = d_t * f
+            if np.isfinite(z[rr, cc]) and (float(z[rr, cc]) - d * d / (2 * R) - za) / d > tgt:
+                blocked = True
+                break
+        n += 1
+        agree += (SHADOW if blocked else CONTACT) == radio[r, c]
+    out.append(Check("Operations", "Radio sweep vs direct line of sight (cells agreeing)", n, agree, agree >= n - 2,
+                     f"200 random cells in reach; antennas {comms['rover_antenna_m']:g} m (rover) and "
+                     f"{comms['suit_antenna_m']:g} m (suit); the ground drops d²/2R"))
+    shadow_pct = 100.0 * float((radio == SHADOW).sum()) / max(float((radio > 0).sum()), 1.0)
+    out.append(Check("Operations", "Ground in walk range with no line of sight to the rover (%)", "reported",
+                     round(shadow_pct, 1), True, "layers.radio: line of sight only, no relay or diffraction"))
+    # Shelter: the farthest walk home anywhere on the route, from the plan's own profile (sampled) and from the field.
+    lead = float(eva.eva.get("sep_warning_lead_min", 30.0))
+    prof = [x for x in plan.profile.get("walkback_min", []) if x is not None]
+    worst = float(s["shelter_max_walk_home_min"])
+    out.append(Check("Operations", "Longest walk home on the route vs storm warning (min)", f"≤ {lead:g}", worst,
+                     worst <= lead and (not prof or max(prof) <= worst + 0.05),
+                     "walk-back field × margin on every route cell; the sampled profile never exceeds it"))
+    # Terrain uncertainty: the route never crosses ground off limits in (nearly) every perturbed terrain.
+    if "marginal_route_m" in s:
+        out.append(Check("Operations", "Route on ground off limits in ≥ 95 % of perturbed terrains (m)", 0,
+                         s["marginal_always_m"], s["marginal_always_m"] == 0,
+                         f"layers.uncertainty: noise σ = {s['terrain_sigma_m']:g} m (HiRISE 'tens of cm'), sub-metre shifts"))
+        out.append(Check("Operations", "Route on ground off limits in only some perturbed terrains (m)", "reported",
+                         s["marginal_route_m"], True, "the off-limits test cannot be sure there: worth a look on the photo"))
+    # Gravity: free-air change with height (2h/R) and the latitude term of a rotating, flattened Mars (Clairaut).
+    elev = [x for x in plan.profile.get("elev_m", []) if x is not None]
+    lats = [w.lat for w in plan.waypoints]
+    dh = (max(elev) - min(elev)) if elev else 0.0
+    omega = 2 * math.pi / 88642.66                                  # Mars sidereal day, s
+    g_eq = float(site.body.get("gravity_mps2", 3.71))
+    flat = (3396.19 - 3376.20) / 3396.19
+    beta = 2.5 * omega * omega * R / g_eq - flat
+    d_lat = abs(math.sin(math.radians(max(lats))) ** 2 - math.sin(math.radians(min(lats))) ** 2) * beta
+    dg_pct = 100.0 * (2 * dh / R + d_lat)
+    out.append(Check("Operations", "Change in gravity across the walk (%)", "< 0.1", round(dg_pct, 4), dg_pct < 0.1,
+                     f"free-air 2Δh/R over {dh:.0f} m of relief + Clairaut latitude term; mass anomalies (GMM-3, "
+                     "~90 km resolution) vary little across a 4 km site. One g for the whole walk is fine"))
     return out
 
 
@@ -214,16 +306,30 @@ def run(site: SiteConfig, eva: EVAConfig, stack=None, cost: str | None = None) -
     checks = check_constants(site, eva)
     if stack is not None:
         from marswalk.export.payload import plan_payload
-        from marswalk.route.plan import build_plan
+        from marswalk.route.astar import snap
+        from marswalk.route.plan import build_plan, radio_field
         checks += check_terrain(site, stack)
-        plan = build_plan(site, eva, stack, cost)
-        checks += check_plan(site, eva, stack, plan, plan_payload(plan, stack))
+        rc = snap(stack, stack.grid.latlon_to_rc(site.start.lat, site.start.lon))
+        radio = radio_field(stack, eva, rc, float(site.body["radius_m"]))
+        from marswalk.layers import uncertainty
+        win = uncertainty.walk_window(site, stack)
+        offlimits = (uncertainty.offlimits_frequency(stack, eva.hazards, win, site.dtm.get("uncertainty")), win)
+        plan = build_plan(site, eva, stack, cost, radio=radio, offlimits=offlimits)
+        payload = plan_payload(plan, stack)
+        checks += check_plan(site, eva, stack, plan, payload)
+        checks += check_operations(site, eva, stack, plan, payload, radio)
     return checks
 
 
 def markdown(checks: list[Check], title: str = "Audit results") -> str:
-    lines = [f"# {title}", "", (f"Generated by `marswalk audit` on {dt.datetime.now(dt.UTC):%Y-%m-%d %H:%M} UTC. "
-             f"{sum(c.ok for c in checks)} of {len(checks)} checks pass."), ""]
+    real = [c for c in checks if not c.finding]
+    notes = [c for c in checks if c.finding]
+    head = (f"Generated by `marswalk audit` on {dt.datetime.now(dt.UTC):%Y-%m-%d %H:%M} UTC. "
+            f"{sum(c.ok for c in real)} of {len(real)} checks pass.")
+    if notes:
+        head += (f" {len(notes)} model assumption{'s are' if len(notes) > 1 else ' is'} compared with published data "
+                 f"(⚠️ = the assumption differs from the data; these are findings, not failures).")
+    lines = [f"# {title}", "", head, ""]
     for group in dict.fromkeys(c.group for c in checks):
         lines += [f"## {group}", "", "| | Check | Expected | MarsWalk | How it is checked |", "|---|---|---|---|---|"]
         lines += [c.row() for c in checks if c.group == group] + [""]

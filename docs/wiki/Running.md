@@ -16,7 +16,7 @@ marswalk serve                # API on :8000
 cd frontend && npm install && npm run dev    # app on http://localhost:5173
 ```
 
-On Windows use `.venv\Scripts\activate`. Tests: `pytest` (80) and, in `frontend/`, `npx tsc --noEmit && npx eslint src`.
+On Windows use `.venv\Scripts\activate`. Tests: `pytest` (82) and, in `frontend/`, `npx tsc --noEmit && npx eslint src`.
 
 ## When something is off
 
@@ -28,3 +28,10 @@ On Windows use `.venv\Scripts\activate`. Tests: `pytest` (80) and, in `frontend/
 | Space weather "partly unavailable" | NASA DONKI was slow or the hourly limit was reached | Wait, add a key to `.env`, or press *Ask NASA again now* |
 | Map colour stops at slanted edges | That is the end of the HiRISE stereo strip | `marswalk fetch` adds the USGS merged DEM around it |
 | The microphone does nothing | Browser without speech input (e.g. Firefox) or microphone blocked | Use Chrome or Safari, allow the microphone, or type |
+
+## The simulator
+
+It needs `npm install` once after pulling (it adds Three.js) and `marswalk serve` running. If the Simulation button
+is greyed out, the app can't reach the API. If the ground shows shaded relief but no photographed detail, the
+orthophoto (`raw/ortho_1m.tif`) is missing: run `marswalk fetch` again, then restart `marswalk serve`, which caches
+the simulator's terrain until the raw data changes.

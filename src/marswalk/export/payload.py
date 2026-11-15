@@ -35,6 +35,7 @@ def plan_payload(plan, stack) -> dict:
     """EVAPlan -> the JSON the app draws: route (GeoJSON, one LineString per leg, lon/lat), summary,
     timeline, profile and violations."""
     from marswalk.route.plan import KJ_PER_KG_O2
+    cons = plan.consumables or {}
     feats = []
     for leg in plan.legs:
         rows = [rc[0] for rc in leg.path.cells]
@@ -62,6 +63,8 @@ def plan_payload(plan, stack) -> dict:
         "max_grade_deg": round(max((leg.path.max_grade_deg for leg in plan.legs), default=0.0), 1),   # steepest step WALKED
         "cost_model": plan.cost_model,
         "order": " > ".join(plan.order),
+        **plan.exposure,
+        **cons,
     }
     timeline = [{"id": w.id, "name": w.name, "kind": w.kind, "lat": w.lat, "lon": w.lon,
                  "arrive_min": round(w.arrive_s / 60.0, 1), "depart_min": round(w.depart_s / 60.0, 1),

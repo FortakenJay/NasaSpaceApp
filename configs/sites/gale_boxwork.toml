@@ -28,6 +28,11 @@ height = 18270
 # merged DEM below share (measured 2026-11-14 by cross-correlating the DTM with both: 33 m north, 30 m west).
 # Layers move by this much at load time so they sit on the photo; stops.json is already in the base-map frame.
 basemap_offset_m = { east = -30.5, north = 33.5 }
+# Terrain uncertainty (layers/uncertainty.py). This DTM's own expected vertical precision is not in its PDS label or
+# README; 1 m HiRISE DTMs are "tens of cm" (Sutton et al. 2022, Remote Sensing 14: 2403), "under 0.5 m for most"
+# (Sutton et al., LPSC 2015). Assumption: 0.3 m. At 0.5 m the "sometimes off limits" share of the walk area triples.
+# Registration: the measured residual after the configured shift is sub-metre (coverage.register); 0.5 m assumed.
+uncertainty = { vertical_sigma_m = 0.3, registration_sigma_m = 0.5, draws = 20, noise_corr_px = 1.0 }
 
 # Wider terrain: the USGS merged 1 m Gale DEM (Parker & Calef, 2016; HRSC + CTX + HiRISE DEMs tied to MOLA).
 # It fills the whole analysis window, where the HiRISE strip above covers only part of it. The merged DEM is the

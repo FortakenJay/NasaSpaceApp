@@ -6,8 +6,8 @@ come from, and can we get the same answer a different way?*
 
 `marswalk audit` is the result. It recomputes each value by an independent path: haversine distances along the drawn
 route instead of grid steps, the timeline re-added leg by leg, budgets straight from the config, the slope layer
-hand-computed at random cells. Then it compares the two answers. On the real Gale data: **30 of 30 checks pass**
-([full table](Audit-results.md)). Run it yourself after `marswalk fetch`:
+hand-computed at random cells. Then it compares the two answers. On the real Gale data: **38 of 38 checks pass**,
+and **one finding** stands ([full table](Audit-results.md)). Run it yourself after `marswalk fetch`:
 
 ```bash
 marswalk audit --out docs/wiki/Audit-results.md
@@ -37,6 +37,21 @@ Four things were wrong. All four are fixed, and each one now has a check so it c
   faster than flat walking.
 - **Safety:** no route cell in off-limits ground, the steepest step under the 20° limit, and every stop inside 2 km.
 - **Radiation:** the dose for the walk.
+- **Operations:** the radio line-of-sight sweep against a direct line from the rover's antenna at 200 random cells
+  (199 agree; the odd one is a rounding difference at a cell edge), the share of the walk range out of radio contact
+  (88 % with a 3 m mast), the longest walk home on the route against the 30 min solar-storm warning (15 min), no route
+  on ground that is off limits in at least 95 % of 20 perturbed terrains (0 m) and how much crosses ground that is
+  off limits in only some of them (50 m), and the change in gravity across the walk (0.003 %: one g for the whole walk).
+
+## Findings: assumptions measured against data
+
+Some entries compare a model assumption with published measurements instead of checking arithmetic. They show ⚠️
+when the two disagree, and they never make the audit fail, because the code does what it says; the assumption is
+what is in question, and changing it is a decision.
+
+| Finding | Model | Data | What would change it |
+|---|---|---|---|
+| **Top walking speed at Mars gravity.** People switch from walking to running at 1.39 ± 0.06 m/s at 0.4 g (Kram, Domingo & Ferris 1997, Table 1; unsuited). | 1.6 m/s on the flat (Marquez curve) | 1.39 m/s | `walk_run_froude = 0.56` in `configs/eva` caps walking at 1.36 m/s. On this plan: 3.52 h → 3.54 h outside, smallest walk-home margin 124.8 → 123.5 min |
 
 ## Assumptions to be honest about
 
@@ -51,3 +66,8 @@ These are inputs, not errors, and a reviewer should know them:
 - **The radiation dose is the cosmic-ray background measured by Curiosity's RAD.** A suit shields less than the rover's
   surroundings, and a solar storm adds on top. That is why the space-weather check exists.
 - **Thermal inertia comes in 100 m blocks.** It flags regional sand, not one dune.
+- **Radio is line of sight only**, from a 3 m mast to a 2 m suit antenna (both assumed): no relay, no diffraction over
+  ridge tops, so it errs toward "out of contact".
+- **The terrain's stereo precision is assumed at 0.3 m.** This DTM's own value is not published in its label or
+  README; HiRISE gives "tens of cm" for 1 m DTMs. At 0.5 m, the ground that is only sometimes off limits grows from
+  17 % to 55 % of the walk area, and the route's stretch across it from 50 m to 659 m.

@@ -165,9 +165,14 @@ def _run_audit(site, eva, args):
     checks = audit.run(site, eva, st, cost=args.cost)
     width = max(len(c.name) for c in checks)
     for c in checks:
-        print(f"  {'ok  ' if c.ok else 'FAIL'} {c.name:<{width}}  expected {c.expected!s:>12}  got {c.got!s:>12}")
-    bad = [c for c in checks if not c.ok]
-    print(f"{len(checks) - len(bad)} of {len(checks)} checks pass.")
+        mark = "ok  " if c.ok else ("NOTE" if c.finding else "FAIL")
+        print(f"  {mark} {c.name:<{width}}  expected {c.expected!s:>12}  got {c.got!s:>12}")
+    bad = [c for c in checks if not c.ok and not c.finding]
+    real = [c for c in checks if not c.finding]
+    notes = [c for c in checks if c.finding and not c.ok]
+    print(f"{len(real) - len(bad)} of {len(real)} checks pass."
+          + (f" {len(notes)} model assumption{'s' if len(notes) > 1 else ''} differ{'' if len(notes) > 1 else 's'} from "
+             f"published data (NOTE)." if notes else ""))
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.out).write_text(audit.markdown(checks), encoding="utf-8")

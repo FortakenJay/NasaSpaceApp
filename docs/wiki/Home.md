@@ -13,6 +13,7 @@ can stay out and still walk home.
 | [Audit](Audit.md) · [results](Audit-results.md) | How the numbers were checked, and the four errors it caught |
 | [Voice questions](Voice-questions.md) | Ask MarsWalk out loud |
 | [Suit display](Suit-display.md) | The e-ink navigation screen and its ESP32 firmware |
+| [Simulation](Simulation.md) | Walk the plan on foot in 3-D, on the real terrain, before anyone suits up |
 | [API](API.md) | Endpoints |
 | [Running it](Running.md) | Setup and troubleshooting |
 | [Decisions](Decisions.md) | What was chosen over what, and why, by component |

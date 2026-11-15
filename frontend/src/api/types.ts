@@ -65,7 +65,7 @@ export interface StopPatch {
 
 export interface LayerInfo {
   name: string;
-  /** Stable id of the overlay: hillshade | slope5 | roughness | ti | nogo | safezone. */
+  /** Stable id of the overlay: hillshade | slope5 | roughness | ti | nogo | safezone | radio | shelter. */
   key: string;
   url: string;
   bounds: [number, number, number, number]; // lon_min, lat_min, lon_max, lat_max
@@ -170,6 +170,115 @@ export interface AskRequest {
   selected_stop_id?: string | null;
   /** ...otherwise the planned position this many hours into the walk (0 = the rover). */
   elapsed_h?: number;
+  /** A walker's actual position (the simulator). Overrides both. */
+  here_lat?: number;
+  here_lon?: number;
+  /** Stops already done, so "the next stop" skips them. */
+  visited?: string[];
+}
+
+/** GET /api/sim/terrain: the walk area as a height grid in local metres (origin = rover, x east, z south). */
+export interface SimTerrain {
+  lat0: number;
+  lon0: number;
+  /** Metres per degree of longitude / latitude: x = (lon - lon0) * kx, z = -(lat - lat0) * kz. */
+  kx: number;
+  kz: number;
+  rows: number;
+  cols: number;
+  /** Centre of cell (row 0, col 0) and the cell spacing, in local metres. */
+  x0: number;
+  dx: number;
+  z0: number;
+  dz: number;
+  /** Height of 0 cm, relative to the rover. */
+  h0: number;
+  /** Where the heights are (GET /api/sim/terrain.bin): uint16 LE cm above h0 | off-limits bits, row-major, MSB first. */
+  heights: { url: string; layout: string };
+  terrain_source: string;
+  /** The 1 m walking grid the physics reads (GET /api/sim/fine.bin), at the planner's own resolution. */
+  fine: SimFineMeta;
+  physics: SimPhysics;
+}
+
+/** SimTerrain with its heights binary already fetched (what useSimTerrain returns). */
+export interface SimTerrainData extends SimTerrain {
+  heightsBin: ArrayBuffer;
+}
+
+/**
+ * Shape and frame of /api/sim/fine.bin: walk heights uint16 LE (cm) | terrain heights uint16 LE (cm) | roughness
+ * uint8 (cm) | sand bits | off-limits bits | radio-shadow bits. Both height grids are cm above h0.
+ */
+export interface SimFineMeta {
+  rows: number;
+  cols: number;
+  x0: number;
+  dx: number;
+  z0: number;
+  dz: number;
+  /** Height of 0 cm, relative to the rover. */
+  h0: number;
+  height_unit_m: number;
+  rough_unit_m: number;
+  /** Where the grid is: GET /api/sim/fine.bin with a version that changes with the layout and the data. */
+  url: string;
+}
+
+/** GET /api/sim/sun: the Sun through the walk (Mars24), azimuth clockwise from north and elevation, in degrees. */
+export interface SimSun {
+  start_utc: string;
+  ls_deg: number;
+  lmst_h: number;
+  ltst_h: number;
+  /** Sol number at the rover (Mars Sol Date counted in local mean solar time). */
+  sol?: number;
+  step_min: number;
+  az_el: [number, number][];
+}
+
+export interface SimPhysics {
+  gravity_mps2: number;
+  body_mass_kg: number;
+  suit_mass_kg: number;
+  max_grade_deg: number;
+  /** Gait limit: walking speed cap at the walk-run transition (m/s), null when off. */
+  walk_speed_cap_mps?: number | null;
+  /** Warning before a solar storm's dose arrives (min): beyond this walk home, the rover is out of reach. */
+  sep_warning_lead_min?: number;
+  /** Planner's multipliers on walking time: x (1 + this * roughness in m), and x sand_penalty on loose sand. */
+  roughness_penalty_per_m: number;
+  sand_penalty: number;
+  /** Walk start, local mean solar time (hours). */
+  start_lmst_h: number;
+  work_power_w: number;
+  o2_capacity_h: number;
+  walkback_reserve_frac: number;
+  metabolic_budget_kj: number;
+  time_margin_factor: number;
+  rad_mgy_per_day: number;
+  rad_msv_per_day: number;
+}
+
+/** GET /api/walkback: the walk home from a point. */
+export interface WalkHome {
+  reachable: boolean;
+  safe: boolean;
+  walkback_min?: number;
+  walkback_kj?: number;
+  margin_min?: number;
+  route: GeoJSON.Feature | null;
+}
+
+/** The suit display for a walker's actual state. */
+export interface LiveState {
+  planId: string;
+  elapsedH: number;
+  lat: number;
+  lon: number;
+  walkedM: number;
+  energyKj: number;
+  visited: string[];
 }
 
 export interface AskAnswer {
@@ -182,6 +291,8 @@ export interface AskAnswer {
   here: { label: string; lat: number; lon: number; used: boolean };
   /** Route and points the answer is about, to draw on the map. */
   highlight: GeoJSON.FeatureCollection | null;
+  /** A stop this answer can make the next stop on the walk, when the question asked for a path. */
+  go_to: { id: string; label: string } | null;
 }
 
 export interface SourceFeed {

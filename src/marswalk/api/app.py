@@ -16,6 +16,11 @@ routes reach the database ONLY through marswalk.db.repo.
     GET  /api/layers                         -> available overlays ([] until the terrain is fetched)    [works]
     GET  /api/layers/{name}.png              -> overlay PNG; safezone takes ?elapsed_h=                 [works]
     GET  /api/status                         -> space-weather GO / CAUTION / NO-GO (DONKI + RAD)        [works]
+    GET  /api/sim/terrain?step=              -> heights, off-limits mask and suit physics for the 3D simulator
+    GET  /api/sim/texture.png?kind=&step=    -> ground texture for the simulator (photo | hazard)
+    GET  /api/sim/fine.bin                   -> 1 m walk surface, roughness, sand, off-limits (gzip) for its physics
+    GET  /api/sim/sun?start_utc=&hours=      -> Sun azimuth/elevation through the walk (Mars24)
+    GET  /api/eink.png|.bin?...&lat&lon...   -> suit display; live position, walked_m, energy_kj, visited
     GET  /api/sources                        -> external API use: per-feed state, cache savings, request budget
     POST /api/sources/refresh                -> ask NASA again now (ignores cache and back-off)
 
@@ -37,14 +42,21 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from marswalk import __version__
-from marswalk.config import PROJECT_ROOT, EVAConfig, SiteConfig, load_dotenv, load_eva, load_site
+from marswalk.config import (
+    PROJECT_ROOT,
+    EVAConfig,
+    SiteConfig,
+    load_dotenv,
+    load_eva,
+    load_site,
+)
 from marswalk.db import repo
 from marswalk.db.engine import DEFAULT_URL, make_engine, make_session_factory
 from marswalk.export.payload import plan_payload, site_payload
 
 DEFAULT_SITE = "configs/sites/gale_boxwork.toml"
 DEFAULT_EVA = "configs/eva/artemis_default.toml"
-LAYER_NAMES = ("hillshade", "slope5", "roughness", "ti", "nogo", "safezone")
+LAYER_NAMES = ("hillshade", "slope5", "roughness", "ti", "nogo", "safezone", "radio", "shelter", "uncertain")
 
 CostName = Literal["metabolic", "weighted"]
 OrderName = Literal["fixed", "optimize"]
@@ -90,6 +102,9 @@ class AskIn(BaseModel):
     plan_id: str | None = None                 # the plan on screen (POST /api/plan returns its id)
     selected_stop_id: str | None = None        # "here", if a stop is selected on the map
     elapsed_h: float = Field(default=0.0, ge=0, le=24)   # "here" along the plan otherwise (step 4 slider)
+    here_lat: float | None = None              # a walker's actual position (the simulator): overrides both
+    here_lon: float | None = None
+    visited: list[str] | None = None
 
 
 class ObservationIn(BaseModel):
@@ -226,8 +241,34 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
                 rc = snap(stack, stack.grid.latlon_to_rc(site.start.lat, site.start.lon))
                 if rc is None:
                     raise HTTPException(409, "the EVA start is outside the terrain window or in a no-go area")
-                fields.clear()
+                for k in [k for k in fields if k[0] != id(stack) or k[1] not in ("radio", "uncertain")]:
+                    del fields[k]
                 fields[key] = walkback_field(stack, eva, rc, cost)
+            return fields[key]
+
+    def radio(stack):
+        """Radio line of sight to the rover over the walk range (cached; under a second)."""
+        from marswalk.route.astar import snap
+        from marswalk.route.plan import radio_field
+        key = (id(stack), "radio")
+        with lock:
+            if key not in fields:
+                rc = snap(stack, stack.grid.latlon_to_rc(site.start.lat, site.start.lon))
+                if rc is None:
+                    raise HTTPException(409, "the EVA start is outside the terrain window or in a no-go area")
+                for k in [k for k in fields if k[0] != id(stack)]:
+                    del fields[k]
+                fields[key] = radio_field(stack, eva, rc, float(site.body["radius_m"]))
+            return fields[key]
+
+    def uncertain(stack):
+        """(off-limits frequency, window) over the walk area from perturbed terrain (cached; about 2 s)."""
+        from marswalk.layers import uncertainty
+        key = (id(stack), "uncertain")
+        with lock:
+            if key not in fields:
+                win = uncertainty.walk_window(site, stack)
+                fields[key] = (uncertainty.offlimits_frequency(stack, eva.hazards, win, site.dtm.get("uncertainty")), win)
             return fields[key]
 
     @app.post("/api/plan")
@@ -255,7 +296,8 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
                            dtm_z_m=saved[i]["dtm_z_m"], work_time_min=saved[i]["work_time_min"],
                            science=saved[i]["science"]) for i in ids]
         try:
-            plan = build_plan(site, eva, stack, cost, points=points, order=req.order, back=walkback(stack, cost))
+            plan = build_plan(site, eva, stack, cost, points=points, order=req.order, back=walkback(stack, cost),
+                              radio=radio(stack), offlimits=uncertain(stack))
         except PlanError as e:
             raise HTTPException(422, str(e)) from e
         result = plan_payload(plan, stack)
@@ -293,7 +335,18 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
             stack = terrain()
         except HTTPException:
             return []   # terrain not fetched yet: the app shows the basemap only
-        return render.layer_list(stack, has_ti=bool(np.isfinite(stack.ti).any()))
+        from marswalk.layers import uncertainty
+        layers = render.layer_list(stack, has_ti=bool(np.isfinite(stack.ti).any()),
+                                   shelter_lead_min=float(eva.eva.get("sep_warning_lead_min", 30.0)))
+        r0, r1, c0, c1 = uncertainty.walk_window(site, stack)
+        lat_min, lon_min, lat_max, lon_max = stack.grid.window(r0, c0, r1 - r0, c1 - c0).bounds_latlon()
+        sigma = float((site.dtm.get("uncertainty") or {}).get("vertical_sigma_m", 0.3))
+        layers.append({"name": "Off-limits certainty", "key": "uncertain", "url": "/api/layers/uncertain.png",
+                       "bounds": [lon_min, lat_min, lon_max, lat_max], "opacity": 0.6,
+                       "note": (f"The off-limits test rerun on {int((site.dtm.get('uncertainty') or {}).get('draws', 20))} "
+                                f"versions of the terrain, each within its {sigma:g} m stereo precision. Amber: off limits "
+                                "in some versions only, so the map cannot be sure; red: in nearly all. Walk area only.")})
+        return layers
 
     @app.get("/api/layers/{name}.png")
     def get_layer(name: str, elapsed_h: float = 0.0, cost: CostName | None = None):
@@ -307,6 +360,14 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
             back = walkback(stack, cost or eva.cost_model)
             return Response(render.safezone_png(render.safezone_fraction(back, eva, elapsed_h,
                                                                             step=render.overlay_step(stack.shape))), media_type="image/png",
+                            headers={"Cache-Control": "max-age=600"})
+        if name == "radio":
+            return Response(render.radio_png(radio(stack)), media_type="image/png", headers={"Cache-Control": "max-age=600"})
+        if name == "uncertain":
+            from marswalk.layers import uncertainty
+            return Response(uncertainty.png(uncertain(stack)[0]), media_type="image/png", headers={"Cache-Control": "max-age=600"})
+        if name == "shelter":
+            return Response(render.shelter_png(walkback(stack, cost or eva.cost_model), eva), media_type="image/png",
                             headers={"Cache-Control": "max-age=600"})
         stamp = raw_stamp(site)
         png = cache_dir(site) / f"{name}-{stamp}.png"
@@ -375,11 +436,93 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
                 return None
         ctx = AskContext(site=site, eva=eva, stops=repo.list_stops(db, site.id), plan=plan, cost=cost,
                          selected_stop_id=body.selected_stop_id, elapsed_h=body.elapsed_h, stack=stack,
+                         live=(body.here_lat, body.here_lon) if body.here_lat is not None and body.here_lon is not None else None,
+                         visited=body.visited,
                          walkback=lambda st: walkback(st, cost), status=_status)
         return answer(body.question, ctx)
 
+    # --- 3-D walk simulator ---------------------------------------------------------------------------
+    sim_cache: dict = {}
+
+    def _sim_points(db) -> tuple[tuple[float, float], list[tuple[float, float]]]:
+        stops = repo.list_stops(db, site.id)
+        start = next(s for s in stops if s["kind"] == "start")
+        return (start["lat"], start["lon"]), [(s["lat"], s["lon"]) for s in stops if s["kind"] != "start"]
+
+    @app.get("/api/sim/terrain")
+    def sim_terrain(db: DB, step: int = Query(3, ge=1, le=10)):
+        """The walk area as a height grid in local metres around the rover (x east, z south), for the simulator."""
+        from marswalk import sim
+        from marswalk.layers.stack import raw_stamp
+        stack = terrain()
+        (lat0, lon0), pts = _sim_points(db)
+        key = ("terrain", raw_stamp(site), step, lat0, lon0, tuple(pts))
+        if key not in sim_cache:
+            sim_cache[key] = sim.terrain_package(site, eva, stack, lat0, lon0, pts, step=step, stamp=raw_stamp(site))
+        return JSONResponse(sim_cache[key], headers={"Cache-Control": "no-cache"})
+
+    @app.get("/api/sim/terrain.bin")
+    def sim_terrain_bin(db: DB, step: int = Query(3, ge=1, le=10), v: str = ""):
+        """The 3 m mesh's heights and off-limits bits (layout and frame in /api/sim/terrain). Sent gzip-compressed."""
+        import gzip
+
+        from marswalk import sim
+        from marswalk.layers.stack import raw_stamp
+        stack = terrain()
+        (lat0, lon0), pts = _sim_points(db)
+        key = ("terrain.bin", raw_stamp(site), step, lat0, lon0, tuple(pts))
+        if key not in sim_cache:
+            sim_cache[key] = gzip.compress(sim.terrain_bytes(stack, lat0, lon0, pts, step=step), compresslevel=5)
+        return Response(sim_cache[key], media_type="application/octet-stream",
+                        headers={"Content-Encoding": "gzip", "Cache-Control": "max-age=3600"})
+
+    @app.get("/api/sim/fine.bin")
+    def sim_fine(db: DB, v: str = ""):
+        """The 1 m walking grid (walk surface, terrain, roughness, sand, off-limits, radio shadow) the simulator's
+        physics reads; layout in /api/sim/terrain -> fine. Sent gzip-compressed."""
+        import gzip
+
+        from marswalk import sim
+        from marswalk.layers.stack import raw_stamp
+        stack = terrain()
+        (lat0, lon0), pts = _sim_points(db)
+        key = ("fine", raw_stamp(site), lat0, lon0, tuple(pts))
+        if key not in sim_cache:
+            sim_cache[key] = gzip.compress(sim.fine_bytes(stack, lat0, lon0, pts, radio=radio(stack)), compresslevel=5)
+        return Response(sim_cache[key], media_type="application/octet-stream",
+                        headers={"Content-Encoding": "gzip", "Cache-Control": "max-age=3600"})
+
+    @app.get("/api/sim/sun")
+    def sim_sun(db: DB, start_utc: str | None = None, hours: float = Query(10.0, gt=0, le=24)):
+        """The Sun's azimuth and elevation through a walk at the rover, every 2 minutes (Mars24 algorithm). Without
+        `start_utc` the walk starts at the next local mean solar time `start_lmst_h` (configs/eva) after now."""
+        import datetime as dt
+
+        from marswalk import sun
+        (lat0, lon0), _ = _sim_points(db)
+        if start_utc:
+            try:
+                start = dt.datetime.fromisoformat(start_utc)
+            except ValueError as e:
+                raise HTTPException(422, f"start_utc is not an ISO time: {start_utc!r}") from e
+        else:
+            start = sun.next_lmst(dt.datetime.now(dt.UTC), lon0, float(eva.eva.get("start_lmst_h", 9.0)))
+        return sun.track(start, lat0, lon0, hours * 60.0)
+
+    @app.get("/api/sim/texture.png")
+    def sim_texture(db: DB, kind: str = Query("photo", pattern="^(photo|hazard)$"), step: int = Query(3, ge=1, le=10)):
+        """The simulator's ground texture: the HiRISE photo in Mars colours, or the off-limits overlay."""
+        from marswalk import sim
+        from marswalk.layers.stack import raw_stamp
+        stack = terrain()
+        (lat0, lon0), pts = _sim_points(db)
+        key = ("texture", kind, raw_stamp(site), step, lat0, lon0, tuple(pts))
+        if key not in sim_cache:
+            sim_cache[key] = sim.texture_png(site, stack, lat0, lon0, pts, kind=kind, step=step)
+        return Response(sim_cache[key], media_type="image/png", headers={"Cache-Control": "max-age=3600"})
+
     # --- suit display (e-ink) -----------------------------------------------------------------------
-    def _eink(plan_id: str | None, elapsed_h: float, db):
+    def _eink(plan_id: str | None, elapsed_h: float, db, live: dict | None = None):
         from marswalk import eink
         if plan_id:
             try:
@@ -400,27 +543,40 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
             weather = _status()
         except Exception:  # noqa: BLE001 - the screen still draws without it
             weather = None
-        return eink.render(saved["result"], site, eva, elapsed_h * 60.0, stack, lambda st: walkback(st, cost), weather)
+        return eink.render(saved["result"], site, eva, elapsed_h * 60.0, stack, lambda st: walkback(st, cost), weather, live)
+
+    def _live(lat, lon, walked_m, energy_kj, visited):
+        if lat is None or lon is None:
+            return None
+        return {"lat": lat, "lon": lon, "walked_m": walked_m, "energy_kj": energy_kj,
+                "visited": [v for v in (visited or "").split(",") if v]}
 
     @app.get("/api/eink.png")
-    def eink_png(db: DB, elapsed_h: float = Query(0.0, ge=0, le=24), plan_id: str | None = None):
+    def eink_png(db: DB, elapsed_h: float = Query(0.0, ge=0, le=24), plan_id: str | None = None,
+             lat: float | None = None, lon: float | None = None, walked_m: float = 0.0, energy_kj: float = 0.0,
+             visited: str | None = None):
         """The suit display (800 x 480, black and white) at `elapsed_h` into the plan (default: the latest plan)."""
         from marswalk import eink
-        return Response(eink.to_png(_eink(plan_id, elapsed_h, db)), media_type="image/png",
+        return Response(eink.to_png(_eink(plan_id, elapsed_h, db, _live(lat, lon, walked_m, energy_kj, visited))), media_type="image/png",
                         headers={"Cache-Control": "no-store"})
 
     @app.get("/api/eink.bin")
-    def eink_bin(db: DB, elapsed_h: float = Query(0.0, ge=0, le=24), plan_id: str | None = None):
+    def eink_bin(db: DB, elapsed_h: float = Query(0.0, ge=0, le=24), plan_id: str | None = None,
+             lat: float | None = None, lon: float | None = None, walked_m: float = 0.0, energy_kj: float = 0.0,
+             visited: str | None = None):
         """The same screen packed for an e-paper driver: 48 000 bytes, 1 bit per pixel, MSB first, 1 = black."""
         from marswalk import eink
-        return Response(eink.to_bin(_eink(plan_id, elapsed_h, db)), media_type="application/octet-stream",
+        return Response(eink.to_bin(_eink(plan_id, elapsed_h, db, _live(lat, lon, walked_m, energy_kj, visited))), media_type="application/octet-stream",
                         headers={"Cache-Control": "no-store", "X-Width": str(eink.W), "X-Height": str(eink.H)})
 
     if warm:
         # Build the terrain stack and the walk-home field in the background, so the first click is not the slow one.
         def _warm():
             try:
-                walkback(terrain(), eva.cost_model)
+                stack = terrain()
+                radio(stack)
+                uncertain(stack)
+                walkback(stack, eva.cost_model)
             except Exception:  # noqa: BLE001 - e.g. terrain not fetched yet; the routes report it when asked
                 pass
         threading.Thread(target=_warm, name="marswalk-warmup", daemon=True).start()

@@ -36,10 +36,11 @@ def test_terrain_routes_answer_409_until_fetched(client):
 def test_plan_layers_and_walkback_on_synthetic_terrain(synthetic_site):
     c = TestClient(create_app(site_path=str(synthetic_site), db_url="sqlite://"))
     layers = c.get("/api/layers").json()
-    assert {l["key"] for l in layers} == {"hillshade", "slope5", "roughness", "ti", "nogo", "safezone"}
+    assert {l["key"] for l in layers} == {"hillshade", "slope5", "roughness", "ti", "nogo", "safezone", "radio", "shelter",
+                                          "uncertain"}
     lon_min, lat_min, lon_max, lat_max = layers[0]["bounds"]
     assert lon_min < lon_max and lat_min < lat_max
-    for key in ("slope5", "nogo"):
+    for key in ("slope5", "nogo", "radio", "shelter", "uncertain"):
         r = c.get(f"/api/layers/{key}.png")
         assert r.status_code == 200 and r.headers["content-type"] == "image/png"
     assert c.get("/api/layers/safezone.png?elapsed_h=5.5").content[:4] == b"\x89PNG"

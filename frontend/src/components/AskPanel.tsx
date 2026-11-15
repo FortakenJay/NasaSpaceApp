@@ -12,12 +12,14 @@ interface Props {
   /** What "here" means right now, in a few words. */
   hereHint: string;
   onHighlight: (fc: GeoJSON.FeatureCollection | null) => void;
+  /** Make this stop the next one on the walk. */
+  onGoTo: (stopId: string) => void;
 }
 
 const EXAMPLES = ['How far is S3 from here?', 'How much oxygen does this walk use?', 'How much radiation?', 'When must we turn back?'];
 
 /** Ask the plan a question, by voice or typed. Answers come from the planner's own numbers and are read aloud. */
-export function AskPanel({ live, planId, selectedStopId, elapsedH, hereHint, onHighlight }: Props) {
+export function AskPanel({ live, planId, selectedStopId, elapsedH, hereHint, onHighlight, onGoTo }: Props) {
   const ask = useAsk();
   const [text, setText] = useState('');
   const [listening, setListening] = useState(false);
@@ -90,6 +92,11 @@ export function AskPanel({ live, planId, selectedStopId, elapsedH, hereHint, onH
               </button>
               <p className="ask-q">{shown.question}</p>
               <p className="ask-a">{shown.answer}</p>
+              {shown.go_to && (
+                <button type="button" className="ask-go-there" onClick={() => onGoTo(shown.go_to!.id)}>
+                  Go to {shown.go_to.label}
+                </button>
+              )}
               <div className="ask-tools">
                 <button type="button" className="link" onClick={() => speak(shown.speech)}>
                   Read aloud

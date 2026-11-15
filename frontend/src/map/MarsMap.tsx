@@ -25,7 +25,7 @@ import type { LayerInfo, Site, Stop } from '../api';
 import { MARS_GEOGRAPHIC, METERS_PER_DEGREE, trekSource } from './mars';
 import { PLACEHOLDER_LEGS, WALK_LIMIT } from './layers';
 
-const COLORS = { start: '#4cbb6c', stop: '#e8a33d', user: '#d07cf0', skipped: '#8a9199', route: '#3dd6e8' };
+const COLORS = { start: '#4cbb6c', stop: '#e8a33d', user: '#d07cf0', skipped: '#8a9199', route: '#3dd6e8', routeBack: '#ff6a00' };
 
 function stopStyle(stop: Stop, selected: boolean, skipped: boolean): Style {
   return new Style({
@@ -49,10 +49,10 @@ function stopStyle(stop: Stop, selected: boolean, skipped: boolean): Style {
 function highlightStyle(f: FeatureLike): Style[] {
   const role = f.get('role') as string;
   if (f.getGeometry()?.getType() === 'LineString') {
-    const dash = role === 'home' ? [10, 7] : undefined;
+    const back = role === 'home' || role === 'back';
     return [
       new Style({ stroke: new Stroke({ color: 'rgba(0,0,0,0.65)', width: 7 }) }),
-      new Style({ stroke: new Stroke({ color: '#ffffff', width: 3.5, lineDash: dash }) }),
+      new Style({ stroke: new Stroke({ color: back ? COLORS.routeBack : COLORS.route, width: 3.5, lineDash: back ? [10, 7] : undefined }) }),
     ];
   }
   return [new Style({
@@ -148,10 +148,15 @@ export function MarsMap({
       })],
       [PLACEHOLDER_LEGS, new VectorLayer({
         source: legSource, zIndex: 5,
-        style: new Style({ stroke: new Stroke({ color: COLORS.route, width: 2, lineDash: [6, 6] }) }),
+        style: (f) => new Style({
+          stroke: new Stroke({ color: f.get('returning') ? COLORS.routeBack : COLORS.route, width: 2, lineDash: [6, 6] }),
+        }),
       })],
       ['Planned route', new VectorLayer({
-        source: routeSource, zIndex: 6, style: new Style({ stroke: new Stroke({ color: COLORS.route, width: 3 }) }),
+        source: routeSource, zIndex: 6,
+        style: (f) => new Style({
+          stroke: new Stroke({ color: f.get('returning') ? COLORS.routeBack : COLORS.route, width: 3 }),
+        }),
       })],
       ['Answer', new VectorLayer({ source: answerSource, zIndex: 8, style: highlightStyle })],
       ['Stops', stopLayer],
@@ -215,7 +220,13 @@ export function MarsMap({
     }));
     const visited = stops.filter((s) => s.kind === 'start' || !skippedIds.includes(s.id));
     h.legSource.clear();
-    if (visited.length > 1) h.legSource.addFeature(new Feature(new LineString([...visited, visited[0]].map((s) => [s.lon, s.lat]))));
+    if (visited.length > 1) {
+      const coords = visited.map((s) => [s.lon, s.lat]);
+      h.legSource.addFeature(new Feature(new LineString(coords)));
+      const back = new Feature(new LineString([coords[coords.length - 1], coords[0]]));
+      back.set('returning', true);
+      h.legSource.addFeature(back);
+    }
     const start = stops.find((s) => s.kind === 'start');
     h.limitSource.clear();
     if (start && walkLimitM) h.limitSource.addFeature(new Feature(new LineString(ring(start.lat, start.lon, walkLimitM))));
@@ -247,8 +258,13 @@ export function MarsMap({
     const h = handles.current;
     if (!h) return;
     h.routeSource.clear();
-    if (route) h.routeSource.addFeatures(new GeoJSONFormat().readFeatures(route));
-  }, [route]);
+    if (route) {
+      const startId = stops.find((s) => s.kind === 'start')?.id;
+      const features = new GeoJSONFormat().readFeatures(route);
+      for (const f of features) if (startId && f.get('to') === startId) f.set('returning', true);
+      h.routeSource.addFeatures(features);
+    }
+  }, [route, stops]);
 
   // What the last answer is about; the view moves to show all of it.
   useEffect(() => {

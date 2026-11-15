@@ -55,6 +55,8 @@ class EVAConfig:
     hazards: dict
     cost: dict = field(default_factory=dict)
     path: Path | None = None
+    comms: dict = field(default_factory=dict)
+    consumables: dict = field(default_factory=dict)
 
     @property
     def cost_model(self) -> str:
@@ -114,4 +116,5 @@ def load_eva(path: str | Path) -> EVAConfig:
     p = _resolve(path)
     raw = tomllib.loads(p.read_text(encoding="utf-8"))
     return EVAConfig(eva=raw["eva"], suit=raw.get("suit", {}), route=raw["route"],
-                     hazards=raw["hazards"], cost=raw.get("cost", {}), path=p)
+                     hazards=raw["hazards"], cost=raw.get("cost", {}), path=p, comms=raw.get("comms", {}),
+                     consumables=raw.get("consumables", {}))

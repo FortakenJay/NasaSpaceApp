@@ -7,4 +7,4 @@ Pipeline (each stage is a module; see docs/ARCHITECTURE.md):
            -> constraints (EVA limits) -> spaceweather (go/no-go) -> export (GeoJSON, Leaflet)
 """
 
-__version__ = "0.9.0"
+__version__ = "1.1.0"

@@ -70,6 +70,19 @@ planner draws it; an ESP32 downloads it once a minute (`firmware/suit_display`).
 
 ![The suit display while working at S2](docs/img/eink-050.png)
 
+**8. You can walk it before you walk it.** Press **Simulation** and the plan becomes a place. You stand by the rover
+on Gale's real ground and walk the cyan line with W, A, S and D. Nothing in the game has physics of its own: under
+your boots it reads the planner's own 1 m grid, so every step is priced exactly as the route search prices it. A
+climb slows you, rough ground can more than double the time of each step, and a 21° slope stops you dead because the
+plan never routes over 20°. On 1,110 cells of the real 1 m grid the game and the planner agree to the last digit. The light is
+honest too: NASA's Mars24 algorithm puts the Sun where it will really be at 09:00 local time on the next sol (for
+the walk we tested, 37° up in the east-northeast, climbing to 74° by local noon), and the shadows fall accordingly.
+In the corner, the real suit display redraws itself from where you stand, once a mission minute, like the ESP32. Ask
+*"how far is the next stop?"* after finishing S1 and it answers from your boots: S2 is 420 m away in a straight
+line. Walk back to the rover, press E, and a debrief puts your walk next to the plan.
+
+![Walking the plan after finishing S1: status, minimap, distances and the live suit display](docs/img/sim-walk.png)
+
 ## The bug that moved the map 45 metres
 
 Late on the first night we checked our own work and found the uncomfortable kind of bug: the kind that looks fine.
@@ -91,10 +104,24 @@ the second stop went from 12.2° to 10.5°. Small numbers, but they are the diff
 under the pin* and *the ground 45 metres away*.
 
 That night set the rule for the rest of the build: **every number gets checked by a second path.** `marswalk audit`
-recomputes 30 of them: distances along the route on the sphere, the timeline added up again, budgets from the
-config, the slope layer hand-computed at random points. All 30 pass on the real data. It caught three more problems
-on the way, all now fixed: an oxygen constant off by 3.5 %, terrain noise counted as walking distance, and a
-radiation figure that did not match its source. [The audit, in full →](docs/wiki/Audit.md)
+recomputes 38 of them: distances along the route on the sphere, the timeline added up again, budgets from the
+config, the slope layer hand-computed at random points, the radio line of sight against a direct ray. All 38 pass
+on the real data. It caught three more problems on the way, all now fixed: an oxygen constant off by 3.5 %, terrain
+noise counted as walking distance, and a radiation figure that did not match its source. It also holds one model
+assumption up against published data: people at 0.4 g switch from walking to running at 1.39 m/s, and the walking
+curve allows 1.6 m/s. That one is a finding, not a failure; a single config line caps it.
+[The audit, in full →](docs/wiki/Audit.md)
+
+## What else it checks before anyone steps out
+
+- **Radio shadow.** From the rover's parked spot, ridges block the line of sight to a 3 m mast over 88 % of the
+  walk range. The planned route is out of contact for 18 minutes, 12 of them in one stretch; every stop is in contact.
+- **Solar storm shelter.** Nowcasting from Curiosity's own radiation detector gives a crew at least 30 minutes of
+  warning before a particle storm's dose arrives (Löwe et al. 2025). The farthest walk home on this route is 15.
+- **How sure "off limits" is.** The off-limits test is rerun on 20 versions of the terrain within its stereo
+  precision. 50 m of the route crosses ground it cannot be sure about; none crosses ground that is off limits in all.
+- **What runs out first.** Oxygen here; cooling water, CO₂ scrubbing and battery are tracked once a suit's
+  capacities are entered.
 
 ## The data
 
@@ -118,7 +145,7 @@ Every formula, with its source: [Models and math](docs/wiki/Models-and-math.md).
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 marswalk fetch            # one time: the terrain window around the rover (~0.6 GB)
-marswalk audit            # recompute every number (30 checks)
+marswalk audit            # recompute every number (38 checks)
 marswalk serve            # API on :8000
 cd frontend && npm install && npm run dev     # the app on http://localhost:5173
 ```
@@ -132,19 +159,25 @@ FastAPI and SQLite on the back; React, TypeScript and OpenLayers (on a true Mars
 route search is a compiled A* over millions of 1 m cells. One reverse search from the rover gives the walk home from
 everywhere at once. Every limit lives in `configs/`, never in code. In the app only the API layer may call the
 network, and in the backend only the repository may touch the database; lint rules and tests fail if either rule is
-broken. 80 tests.
+broken. The simulator is Three.js, loaded only when you open it, and runs the same models in TypeScript, identical
+to the Python (a test runs the TypeScript in Node against the Python on 2,400 steps). 99 tests, plus 25 checks of
+the game itself in the browser: open the app with `?qa=1`.
 
 - [How it works](docs/wiki/How-it-works.md): the pipeline, end to end
+- [Simulation](docs/wiki/Simulation.md): what the walk simulator models, what it doesn't, and how it was checked
+- [TODO](TODO.md): the roadmap for more realistic models and a faster engine (and where the easter eggs are)
 - [Decisions](docs/wiki/Decisions.md): what we chose over what, and why
-- [Knowledge graph](docs/wiki/Knowledge-graph.md): a map of the code (857 nodes), built with graphify
+- [Knowledge graph](docs/wiki/Knowledge-graph.md): a map of the code (1,037 nodes), built with graphify
 - [API](docs/wiki/API.md) · [Voice questions](docs/wiki/Voice-questions.md) · [Suit display](docs/wiki/Suit-display.md)
 
 ## What we would do next
 
 - **Measure, don't assume, the suit.** Speed and energy come from Apollo-era and Earth data. A Mars suit's real
   numbers would replace two lines of config.
-- **A 3-D planning table** so a crew can rehearse the walk from inside the habitat.
-- **Live position.** The suit display follows the plan's clock; with a position fix it would follow the walker.
+- **Dust and weather in the simulator.** The Sun is real; the sky's dust load is not. Tau from the rovers' own
+  sky measurements would set how hazy the light is and how hard the shadows are.
+- **Live position on the suit.** In the simulator the suit display already follows the walker. On real hardware it
+  still follows the plan's clock; a position fix, or step counting from the suit, would close that gap.
 
 ## How this was built
 

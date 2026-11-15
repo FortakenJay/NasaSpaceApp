@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useMemo, useState } from 'react';
 import { AskPanel } from './components/AskPanel';
 import { formatHours } from './format';
+
+const SimulationView = lazy(() => import('./sim/SimulationView'));
 import { describeError, useAddStop, useComputePlan, useDeleteStop, useLayers, usePlans, useSite, useUpdateStop } from './api';
 import type { CostModel, LayerInfo, StopOrder } from './api';
 import { MarsMap } from './map/MarsMap';
@@ -21,13 +23,16 @@ import { SuitDisplayPanel } from './components/SuitDisplayPanel';
 const NO_OVERLAYS: LayerInfo[] = [];
 const DEFAULT_USABLE_H = 5.6; // 8 h of oxygen less the 30% walk-home reserve, if the API does not say
 const PHOTO = 'photo';
-const EXPECTED_API = '0.9'; // major.minor this app was built against (src/marswalk/__init__.py)
+const EXPECTED_API = '1.1'; // major.minor this app was built against (src/marswalk/__init__.py)
 const VIEW_LABELS: Record<string, string> = {
   hillshade: 'Relief',
   slope5: 'Slope',
   roughness: 'Roughness',
   ti: 'Sand or rock',
   nogo: 'Off limits',
+  radio: 'Radio',
+  shelter: 'Storm shelter',
+  uncertain: 'Certainty',
 };
 
 export function App() {
@@ -50,6 +55,7 @@ export function App() {
   const [safeZoneOn, setSafeZoneOn] = useState(false);
   const [elapsedH, setElapsedH] = useState(0);
   const [highlight, setHighlight] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [simulating, setSimulating] = useState(false);
 
   const result = compute.data ?? null;
   const route = result?.route ?? null;
@@ -94,6 +100,16 @@ export function App() {
   else if (result && elapsedH > 0) hereHint = `where the plan puts you ${formatHours(elapsedH)} into the walk`;
 
   const plan = (ids: string[]) => compute.mutate({ cost, order, stop_ids: ids });
+  // "Go to U1": that stop becomes the next one, then the stops already ticked, in that order.
+  const goTo = (id: string) => {
+    if (!stops.some((s) => s.id === id && s.kind !== 'start')) return;
+    const skip = skippedIds.filter((x) => x !== id);
+    setSkippedIds(skip);
+    setOrder('fixed');
+    setSimulating(false);
+    const rest = stops.filter((s) => s.kind !== 'start' && s.id !== id && !skip.includes(s.id)).map((s) => s.id);
+    compute.mutate({ cost, order: 'fixed', stop_ids: [id, ...rest] });
+  };
   // Once a route is on the map it follows every change to the stops, so the two never disagree.
   const follow = (ids: string[]) => {
     if (result === null) return;
@@ -169,12 +185,24 @@ export function App() {
           elapsedH={elapsedH}
           hereHint={hereHint}
           onHighlight={setHighlight}
+          onGoTo={goTo}
         />
       </div>
 
       <aside className="sheet">
         <header>
-          <h1>MarsWalk</h1>
+          <div className="title-row">
+            <h1>MarsWalk</h1>
+            <button
+              type="button"
+              className="sim-open"
+              onClick={() => setSimulating(true)}
+              disabled={!live}
+              title={live ? 'Walk the plan yourself on the real terrain' : 'Needs the planner service'}
+            >
+              Simulation
+            </button>
+          </div>
           <p className="site-name">{meta.name}</p>
           <p className="lede">
             Plan a walk outside on Mars. Choose where to go, get the safest route on foot, and see how long the crew can stay
@@ -276,6 +304,11 @@ export function App() {
           </details>
         )}
       </aside>
+      {simulating && (
+        <Suspense fallback={<div className="sim-loading sim-fallback">Loading the simulation…</div>}>
+          <SimulationView stops={stops} result={result} live={live} onClose={() => setSimulating(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

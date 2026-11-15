@@ -23,6 +23,8 @@ rows top to bottom, most significant bit first, 1 = black.
 """
 from __future__ import annotations
 
+import datetime as dt
+import itertools
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -84,6 +86,8 @@ class Moment:
     walk_home_min: float | None
     energy_pct: float
     dose_mgy: float
+    walked_m: float | None = None                 # live mode: distance actually walked
+    schedule_delta_min: float | None = None       # live mode: + behind the plan, - ahead of it
 
 
 def _route_xy(plan: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -160,6 +164,85 @@ def moment(plan: dict, site, eva, t_min: float, walk_home_min: float | None = No
         dose_mgy=rate * t / 1440.0)
 
 
+def live_moment(plan: dict, site, eva, stack, back, lat: float, lon: float, t_min: float, walked_m: float,
+                energy_kj: float, visited: list[str]) -> tuple[Moment, list[tuple[float, float]]]:
+    """The screen for a walker at (lat, lon): the next planned stop not yet visited, the safest route there from
+    here (A*), the rest of the plan after it, and how far ahead of or behind the plan they are.
+    Returns the moment and the route ahead as (lat, lon) points."""
+    from marswalk.cost.base import model_from_eva
+    from marswalk.route.astar import astar, snap
+    from marswalk.route.plan import usable_budgets
+    tl = plan["timeline"]
+    R = float(site.body["radius_m"])
+    margin = float(eva.eva.get("time_margin_factor", 1.0))
+    by_id = {w["id"]: w for w in tl if w["kind"] == "stop"}
+    order = [w["id"] for w in tl if w["kind"] == "stop"]
+    remaining = [i for i in order if i not in set(visited)]
+    end = tl[-1]
+    nxt = by_id[remaining[0]] if remaining else end
+    legs = {(f["properties"]["from"], f["properties"]["to"]): f for f in plan["route"]["features"]}
+    planned = {(a["id"], b["id"]): (b["arrive_min"] - a["depart_min"]) for a, b in itertools.pairwise(tl)}
+
+    # here -> next: the safest route from where the walker actually is
+    ahead: list[tuple[float, float]] = [(lat, lon)]
+    a = snap(stack, stack.grid.latlon_to_rc(lat, lon), 25.0) if stack is not None else None
+    b = snap(stack, stack.grid.latlon_to_rc(nxt["lat"], nxt["lon"]), 25.0) if stack is not None else None
+    path = astar(stack, model_from_eva(eva, plan["summary"].get("cost_model")), a, b) if a and b and a != b else None
+    if path is not None:
+        la, lo = stack.grid.rc_to_latlon_many([c[0] for c in path.cells], [c[1] for c in path.cells])
+        ahead += list(zip(map(float, la), map(float, lo)))
+        to_next, t_next = path.distance_m, path.time_s * margin / 60.0
+    else:
+        to_next = ground_distance_m(lat, lon, nxt["lat"], nxt["lon"], R)
+        t_next = to_next / 1.0 * margin / 60.0 if to_next > 1 else 0.0
+    # next -> the remaining stops -> the rover, as planned where the plan has that leg
+    seq = [nxt["id"]] + remaining[1:] + ([end["id"]] if remaining else [])
+    rest_m, rest_min = 0.0, 0.0
+    for i, (u, v) in enumerate(itertools.pairwise(seq)):
+        f = legs.get((u, v))
+        ua = by_id.get(u, end)
+        vb = by_id.get(v, end) if i < len(seq) - 2 else end
+        if f is not None:
+            rest_m += float(f["properties"]["distance_m"])
+            rest_min += planned.get((u, v), float(f["properties"]["distance_m"]) / 60.0)
+            ahead += [(c[1], c[0]) for c in f["geometry"]["coordinates"]]
+        else:                                   # stops visited out of plan order: straight line, a little longer
+            d = ground_distance_m(ua["lat"], ua["lon"], vb["lat"], vb["lon"], R) * 1.15
+            rest_m += d
+            rest_min += d / 1.0 * margin / 60.0
+            ahead += [(vb["lat"], vb["lon"])]
+    work = sum(by_id[i]["depart_min"] - by_id[i]["arrive_min"] for i in remaining)
+    arrive_next = t_min + t_next
+    end_min = arrive_next + rest_min + work
+    # heading: 30 m along the route ahead
+    walked = 0.0
+    alat, alon = nxt["lat"], nxt["lon"]
+    for (p_lat, p_lon), (q_lat, q_lon) in itertools.pairwise(ahead):
+        walked += ground_distance_m(p_lat, p_lon, q_lat, q_lon, R)
+        if walked >= 30.0:
+            alat, alon = q_lat, q_lon
+            break
+    b_ = usable_budgets(eva)
+    o2_total = float(eva.suit.get("o2_capacity_h", eva.eva["max_duration_h"])) * 60
+    rate = float(site.spaceweather.get("rad_gcr_dose_mgy_per_day", 0.21))
+    at = nxt["id"] if remaining and to_next < 10.0 else None
+    wh = None
+    if back is not None and a is not None and back.reached(a):
+        wh = float(back.time_s[a]) * margin / 60.0
+    m = Moment(
+        t_min=t_min, lat=lat, lon=lon, where="live",
+        next_id=nxt["id"] if remaining else end["id"], next_name=nxt["name"] if remaining else "the rover",
+        next_lat=nxt["lat"], next_lon=nxt["lon"], next_arrive_min=arrive_next, to_next_m=to_next,
+        at_stop=at, work_left_min=(nxt["depart_min"] - nxt["arrive_min"]) if at else 0.0,
+        to_end_m=to_next + rest_m, end_min=end_min, bearing_deg=_bearing(lat, lon, alat, alon),
+        stop_index=len([v for v in visited if v in by_id]), stop_count=len(order), remaining_ids=remaining,
+        usable_left_min=b_["time_s"] / 60 - t_min, reserve_min=o2_total * float(eva.eva["walkback_reserve_frac"]),
+        o2_total_min=o2_total, walk_home_min=wh,
+        energy_pct=100.0 * energy_kj / b_["energy_kj"] if b_["energy_kj"] else 0.0, dose_mgy=rate * t_min / 1440.0,
+        walked_m=walked_m, schedule_delta_min=(arrive_next - nxt["arrive_min"]) if remaining else (end_min - end["arrive_min"]))
+    return m, ahead
+
+
 # --- drawing --------------------------------------------------------------------------------------
 
 def _arrow(d: ImageDraw.ImageDraw, cx: float, cy: float, size: float, bearing: float, fill: int) -> None:
@@ -206,16 +289,18 @@ def _dither_relief(z: np.ndarray, px_m: float) -> Image.Image:
     return Image.fromarray(gray, "L").convert("1")                # Floyd-Steinberg
 
 
-def _map(img: Image.Image, plan: dict, m: Moment, stack, back_cells, box: tuple[int, int, int, int], site) -> None:
+def _map(img: Image.Image, plan: dict, m: Moment, stack, back_cells, box: tuple[int, int, int, int], site,
+         ahead: list[tuple[float, float]] | None = None) -> None:
     """Draw the map into its own image (so nothing spills over the panels), then paste it into the box."""
     bx0, by0, bx1, by1 = box
     canvas = Image.new("1", (bx1 - bx0, by1 - by0), WHITE)
-    _map_canvas(canvas, plan, m, stack, back_cells, site)
+    _map_canvas(canvas, plan, m, stack, back_cells, site, ahead)
     img.paste(canvas, (bx0, by0))
     ImageDraw.Draw(img).rectangle(box, outline=BLACK, width=2)
 
 
-def _map_canvas(img: Image.Image, plan: dict, m: Moment, stack, back_cells, site) -> None:
+def _map_canvas(img: Image.Image, plan: dict, m: Moment, stack, back_cells, site,
+                ahead: list[tuple[float, float]] | None = None) -> None:
     x0, y0 = 0, 0
     w, h = img.size
     x1, y1 = w, h
@@ -254,8 +339,12 @@ def _map_canvas(img: Image.Image, plan: dict, m: Moment, stack, back_cells, site
     rlat, rlon, rcum = _route_xy(plan)
     d_now = _dist_at(plan, m.t_min)
     pts = [xy(a, b) for a, b in zip(rlat, rlon)]
-    done = _thin([p for p, c in zip(pts, rcum) if c <= d_now] + [xy(m.lat, m.lon)])
-    todo = _thin([xy(m.lat, m.lon)] + [p for p, c in zip(pts, rcum) if c > d_now])
+    if ahead is None:
+        done = _thin([p for p, c in zip(pts, rcum) if c <= d_now] + [xy(m.lat, m.lon)])
+        todo = _thin([xy(m.lat, m.lon)] + [p for p, c in zip(pts, rcum) if c > d_now])
+    else:                                          # live: the whole plan thin, the route from here bold
+        done = _thin(pts)
+        todo = _thin([xy(a, b) for a, b in ahead])
     if len(done) > 1:
         d.line(done, fill=BLACK, width=2)
     if back_cells is not None and len(back_cells) > 1:
@@ -301,12 +390,46 @@ def _map_canvas(img: Image.Image, plan: dict, m: Moment, stack, back_cells, site
     _text(d, (bx, by - 8), _dist(bar_m), _regular(14), anchor="lb")
 
 
-def render(plan: dict, site, eva, t_min: float, stack=None, walkback=None, weather: dict | None = None) -> Image.Image:
-    """The suit display at t_min minutes into the planned walk, as a 1-bit 800 x 480 image."""
-    back_cells, walk_home = None, None
+def _clock(site, eva, t_min: float, start_utc: dt.datetime | None) -> tuple[int, float]:
+    """(sol, local true solar time in hours) at the rover, t_min into a walk that starts at start_utc (default: the
+    next eva.start_lmst_h, as the simulator assumes)."""
+    from marswalk import sun
+    lon = float(site.start.lon)
+    start = start_utc or sun.next_lmst(dt.datetime.now(dt.UTC), lon, float(eva.eva.get("start_lmst_h", 9.0)))
+    t = start + dt.timedelta(minutes=t_min)
+    return sun.local_sol(t, lon), sun.local_times(t, lon)[1]
+
+
+def _hhmm(h: float) -> str:
+    m = int(round((h % 24.0) * 60)) % 1440
+    return f"{m // 60:02d}:{m % 60:02d}"
+
+
+def render(plan: dict, site, eva, t_min: float, stack=None, walkback=None, weather: dict | None = None,
+           live: dict | None = None, start_utc: dt.datetime | None = None) -> Image.Image:
+    """The suit display at t_min minutes into the planned walk, as a 1-bit 800 x 480 image.
+
+    With `live` = {lat, lon, walked_m, energy_kj, visited}, the screen follows a walker's actual position (the
+    simulator, or a real position source) instead of where the plan says they would be at t_min."""
+    from marswalk import consumables
+    back_cells, walk_home, ahead = None, None, None
     tl = plan["timeline"]
     margin = float(eva.eva.get("time_margin_factor", 1.0))
-    if stack is not None and walkback is not None:
+    if live is not None:
+        back = None
+        if stack is not None and walkback is not None:
+            try:
+                back = walkback(stack)
+            except Exception:  # noqa: BLE001
+                back = None
+        m, ahead = live_moment(plan, site, eva, stack, back, float(live["lat"]), float(live["lon"]), t_min,
+                               float(live.get("walked_m", 0.0)), float(live.get("energy_kj", 0.0)), list(live.get("visited", [])))
+        if back is not None and stack is not None:
+            from marswalk.route.astar import snap
+            rc = snap(stack, stack.grid.latlon_to_rc(m.lat, m.lon), 25.0)
+            if rc is not None and back.reached(rc):
+                back_cells = back.trace(rc)
+    elif stack is not None and walkback is not None:
         from marswalk.route.astar import snap
         lat, lon, _ = position_at(plan, min(max(t_min, 0), tl[-1]["arrive_min"])) or (tl[0]["lat"], tl[0]["lon"], "")
         rc = snap(stack, stack.grid.latlon_to_rc(lat, lon), 25.0)
@@ -317,14 +440,15 @@ def render(plan: dict, site, eva, t_min: float, stack=None, walkback=None, weath
         if back is not None and rc is not None and back.reached(rc):
             walk_home = float(back.time_s[rc]) * margin / 60
             back_cells = back.trace(rc)
-    m = moment(plan, site, eva, t_min, walk_home)
+    if live is None:
+        m = moment(plan, site, eva, t_min, walk_home)
 
     img = Image.new("1", (W, H), WHITE)
     d = ImageDraw.Draw(img)
 
     # --- banner: the next thing to do
     d.rectangle([0, 0, W, BANNER_H], fill=BLACK)
-    if m.t_min >= m.end_min - 0.01:
+    if live is None and m.t_min >= m.end_min - 0.01 or (live is not None and not m.remaining_ids and m.to_next_m < 10):
         title, sub, right = "Back at the rover", f"Walk finished after {hm(m.end_min)}", ""
         d.rectangle([34, 28, 90, 84], outline=WHITE, width=5)
     elif m.at_stop:
@@ -347,14 +471,18 @@ def render(plan: dict, site, eva, t_min: float, stack=None, walkback=None, weath
         _text(d, (W - 22, 84), "to go" if not m.at_stop else "left here", _regular(18), fill=WHITE, anchor="ra")
 
     # --- map
-    _map(img, plan, m, stack, back_cells, (10, BANNER_H + 10, MAP_W, H - FOOT_H - 8), site)
+    _map(img, plan, m, stack, back_cells, (10, BANNER_H + 10, MAP_W, H - FOOT_H - 8), site, ahead)
     d = ImageDraw.Draw(img)
 
-    # --- readouts
+    # --- readouts: the consumable that runs out first (oxygen unless the config tracks something tighter)
     x, y = MAP_W + 22, BANNER_H + 12
     rw = W - x - 16
-    _text(d, (x, y), "Oxygen before reserve", _regular(18))
-    left = max(m.usable_left_min, 0)
+    summ = plan.get("summary") or {}
+    mean_kw = float(summ.get("energy_kj", 0)) / max(float(summ.get("duration_h", 0)) * 3600.0, 1.0)
+    e_now = float(live.get("energy_kj", 0.0)) if live is not None else _energy_at(plan, m.t_min)
+    first = consumables.time_left(eva, m.t_min * 60.0, e_now, mean_kw)[0]
+    _text(d, (x, y), f"{first['label']} before reserve", _regular(18))
+    left = max(m.usable_left_min if first["name"] == "oxygen" else first["minutes_left"], 0)
     _text(d, (x, y + 20), hm(left), _display(44))
     gy = y + 72
     used_w = rw * min(m.t_min / m.o2_total_min, 1)
@@ -397,8 +525,16 @@ def render(plan: dict, site, eva, t_min: float, stack=None, walkback=None, weath
     # --- footer
     d.rectangle([0, H - FOOT_H, W, H], fill=BLACK)
     _text(d, (16, H - FOOT_H / 2), f"Mission time {hm(m.t_min)}", _bold(17), fill=WHITE, anchor="lm")
-    _text(d, (W / 2, H - FOOT_H / 2), f"Stop {m.stop_index} of {m.stop_count}", _regular(17), fill=WHITE, anchor="mm")
-    _text(d, (W - 16, H - FOOT_H / 2), site.name.split("/")[0].strip(), _regular(17), fill=WHITE, anchor="rm")
+    centre = f"Stop {m.stop_index} of {m.stop_count}"
+    if m.schedule_delta_min is not None and abs(m.schedule_delta_min) >= 1:
+        centre += f"   {hm(abs(m.schedule_delta_min))} {'behind' if m.schedule_delta_min > 0 else 'ahead of'} plan"
+    elif m.schedule_delta_min is not None:
+        centre += "   on plan"
+    _text(d, (W / 2, H - FOOT_H / 2), centre, _regular(17), fill=WHITE, anchor="mm")
+    sol, ltst = _clock(site, eva, m.t_min, start_utc)
+    right = (f"{_hhmm(ltst)} local · walked {_dist(m.walked_m)}" if m.walked_m is not None
+             else f"Sol {sol} · {_hhmm(ltst)} local")
+    _text(d, (W - 16, H - FOOT_H / 2), right, _regular(17), fill=WHITE, anchor="rm")
     return img
 
 

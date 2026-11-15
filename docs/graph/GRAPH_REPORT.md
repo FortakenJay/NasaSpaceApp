@@ -1,207 +1,272 @@
-# Graph Report - gfy  (2026-11-15)
+# Graph Report - MarsWalk  (2026-11-15)
 
 ## Corpus Check
-- 79 files · ~44,075 words
+- 88 files · ~58,272 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 2 file(s) not represented in the graph (top: .ino 1, .css 1)
+- Unclassified: 9 file(s) not represented in the graph (top: .woff2 4, .ttf 3, .ino 1)
 
 ## Summary
-- 857 nodes · 2323 edges · 40 communities (28 shown, 12 thin omitted)
-- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 131 edges (avg confidence: 0.91)
+- 1037 nodes · 2433 edges · 63 communities (40 shown, 23 thin omitted)
+- Extraction: 86% EXTRACTED · 14% INFERRED · 0% AMBIGUOUS · INFERRED: 348 edges (avg confidence: 0.88)
 - Token cost: 0 input · 0 output
 
 ## Community Hubs (Navigation)
-- test_pipeline.py
-- create_app
+- load_site
 - api_client.py
+- create_app
 - ask.py
+- repo.py
 - endpoints.ts
 - eink.py
-- test_pure_logic.py
-- test_merged_dem.py
-- Raster
-- MarsMap.tsx
-- app.py
-- cli.py
-- numpy
-- App.tsx
-- test_api.py
-- PlanResult.tsx
-- index.ts
-- GeoGrid
-- AskPanel.tsx
-- raster.py
-- fetch.py
-- SiteConfig
+- SimEngine
 - EVAConfig
-- load_site
-- config.py
-- conftest.py
+- MarsMap.tsx
+- App.tsx
+- formatHours
+- index.ts
+- build_plan
+- numpy
+- raster.py
+- engine.ts
+- math
+- app.py
+- coverage.py
+- status.py
+- weighted.py
+- GeoGrid
+- sim.py
+- SimulationView.tsx
+- AskPanel.tsx
+- geo.py
+- astar.py
+- test_pure_logic.py
+- render.py
+- pytest
+- test_merged_dem.py
+- test_pipeline.py
 - test_geo.py
+- LayerStack
+- Terrain
+- model_from_eva
+- physics.py
+- client.ts
+- WalkGrid
+- read_geotiff
+- marswalk_geo
 - main.tsx
+- test_spaceweather_helpers
 - geojson.d.ts
 - Recognition
-- nogo_mask
+- get_session
+- _not_built
 - README.md
 
 ## God Nodes (most connected - your core abstractions)
-1. `create_app()` - 67 edges
-2. `build_stack()` - 44 edges
-3. `load_site()` - 35 edges
-4. `build_plan()` - 35 edges
-5. `Raster` - 34 edges
-6. `GeoGrid` - 29 edges
-7. `SiteConfig` - 28 edges
-8. `AskContext` - 27 edges
-9. `App()` - 24 edges
-10. `answer()` - 23 edges
+1. `create_app()` - 57 edges
+2. `SimEngine` - 35 edges
+3. `load_site()` - 28 edges
+4. `Raster` - 27 edges
+5. `build_plan()` - 27 edges
+6. `build_stack()` - 26 edges
+7. `AskContext` - 25 edges
+8. `App()` - 25 edges
+9. `SimulationView()` - 25 edges
+10. `GeoGrid` - 23 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `test_added_stops_are_saved_moved_planned_and_removed()` --calls--> `create_app()`  [EXTRACTED]
-  tests/test_api.py → marswalk/api/app.py
-- `test_plan_layers_and_walkback_on_synthetic_terrain()` --calls--> `create_app()`  [EXTRACTED]
-  tests/test_api.py → marswalk/api/app.py
-- `synthetic_site()` --uses--> `GeoGrid`  [INFERRED]
-  tests/conftest.py → marswalk/geo.py
-- `dtm_grid()` --uses--> `GeoGrid`  [INFERRED]
-  tests/test_geo.py → marswalk/geo.py
-- `synthetic_site()` --uses--> `Raster`  [INFERRED]
-  tests/conftest.py → marswalk/geo.py
+- `test_ask_api_on_synthetic_terrain()` --calls--> `create_app()`  [INFERRED]
+  tests/test_ask.py → backend/api/app.py
+- `test_suit_display_png_and_packed_bits()` --calls--> `create_app()`  [INFERRED]
+  tests/test_ask.py → backend/api/app.py
+- `test_added_stops_are_saved_moved_planned_and_removed()` --calls--> `create_app()`  [INFERRED]
+  tests/test_api.py → backend/api/app.py
+- `test_plan_layers_and_walkback_on_synthetic_terrain()` --calls--> `create_app()`  [INFERRED]
+  tests/test_api.py → backend/api/app.py
+- `test_simulator_terrain_texture_live_eink_and_live_ask()` --calls--> `create_app()`  [INFERRED]
+  tests/test_ask.py → backend/api/app.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (40 total, 12 thin omitted)
+## Communities (63 total, 23 thin omitted)
 
-### Community 0 - "test_pipeline.py"
+### Community 0 - "load_site"
 Cohesion: 0.05
-Nodes (36): Stop, CostModel, get_cost_model(), model_from_eva(), kernel(), MetabolicCostModel, edge_time_energy(), metabolic_power_w() (+28 more)
+Nodes (46): build_parser(), cmd_export(), cmd_info(), cmd_serve(), main(), _run_audit(), _run_fetch(), _run_layers() (+38 more)
 
-### Community 1 - "create_app"
+### Community 1 - "api_client.py"
 Cohesion: 0.05
-Nodes (56): create_app(), add_observation(), add_stop(), _api_key(), ask(), stack(), compute_plan(), delete_stop() (+48 more)
-
-### Community 2 - "api_client.py"
-Cohesion: 0.06
 Nodes (22): ApiClient, fallback(), without_waiting(), _connect_ipv4(), Fetched, http_get(), _IPv4HTTPSConnection, _IPv4HTTPSHandler (+14 more)
 
+### Community 2 - "create_app"
+Cohesion: 0.05
+Nodes (36): create_app(), add_stop(), _api_key(), ask(), stack(), _client(), compute_plan(), _eink() (+28 more)
+
 ### Community 3 - "ask.py"
-Cohesion: 0.11
-Nodes (43): answer(), answer_energy(), answer_limits(), answer_oxygen(), answer_radiation(), answer_route(), answer_stops(), answer_terrain() (+35 more)
-
-### Community 4 - "endpoints.ts"
 Cohesion: 0.09
-Nodes (38): ApiError, ErrorBody, parseError(), request(), staticJson(), addObservation(), addStop(), ask() (+30 more)
+Nodes (47): _along_route(), answer(), answer_energy(), answer_limits(), answer_oxygen(), answer_radiation(), answer_route(), answer_stops() (+39 more)
 
-### Community 5 - "eink.py"
-Cohesion: 0.09
-Nodes (26): eink_bin(), _along_route(), position_at(), _arrow(), _bearing(), _bold(), _compass(), _display() (+18 more)
+### Community 4 - "repo.py"
+Cohesion: 0.08
+Nodes (27): make_engine(), make_session_factory(), Base, _now(), Observation, Plan, Site, Stop (+19 more)
 
-### Community 6 - "test_pure_logic.py"
+### Community 5 - "endpoints.ts"
 Cohesion: 0.10
-Nodes (16): order_stops(), tour_cost(), current_status(), eva_dose_mgy(), feed_requests(), _flare_rank(), go_no_go(), mars_arrivals() (+8 more)
+Nodes (38): request(), addStop(), ask(), computePlan(), deleteStop(), getLayers(), getSimSun(), getSimTerrain() (+30 more)
 
-### Community 7 - "test_merged_dem.py"
+### Community 6 - "eink.py"
 Cohesion: 0.10
-Nodes (17): register(), shifted(), usable(), build_stack(), raw_stamp(), steep_fraction(), sand_flag(), read_geotiff() (+9 more)
+Nodes (23): _arrow(), _bearing(), _bold(), _compass(), _display(), _dist(), _dist_at(), _dither_relief() (+15 more)
 
-### Community 8 - "Raster"
-Cohesion: 0.13
-Nodes (10): Raster, agreement(), _crop(), hires_footprint(), _plane_removed(), _gauss_nan(), roughness(), slope() (+2 more)
+### Community 8 - "EVAConfig"
+Cohesion: 0.16
+Nodes (16): Check, check_constants(), check_plan(), check_terrain(), _close(), markdown(), run(), EVAConfig (+8 more)
 
 ### Community 9 - "MarsMap.tsx"
 Cohesion: 0.12
-Nodes (22): LayerInfo, Site, Stop, Props, StopList(), BASE_LAYERS, BaseLayerName, MAX_ADDED_STOPS (+14 more)
+Nodes (21): Site, Stop, Props, StopList(), BASE_LAYERS, BaseLayerName, MAX_ADDED_STOPS, PLACEHOLDER_LEGS (+13 more)
 
-### Community 10 - "app.py"
-Cohesion: 0.10
-Nodes (9): AskIn, get_session(), _not_built(), ObservationIn, PlanRequest, PointIn, SavePlanRequest, StopIn (+1 more)
-
-### Community 11 - "cli.py"
+### Community 10 - "App.tsx"
 Cohesion: 0.14
-Nodes (15): _client(), build_parser(), cmd_info(), cmd_serve(), main(), _run_fetch(), _run_layers(), _run_plan() (+7 more)
+Nodes (19): useLayers(), usePlans(), useSite(), CostModel, StopOrder, App(), NO_OVERLAYS, SimulationView (+11 more)
 
-### Community 12 - "numpy"
-Cohesion: 0.19
-Nodes (15): get_layer(), _alpha(), bounds_lonlat(), _colorize(), coverage_note(), layer_list(), layer_notes(), layer_png() (+7 more)
+### Community 11 - "formatHours"
+Cohesion: 0.16
+Nodes (18): einkUrl(), PlanResult, RouteProfile, TimelineEntry, PlanResult(), Props, RULE_NAMES, RouteProfileChart() (+10 more)
 
-### Community 13 - "App.tsx"
-Cohesion: 0.14
-Nodes (18): useLayers(), usePlans(), useSite(), CostModel, StopOrder, App(), NO_OVERLAYS, VIEW_LABELS (+10 more)
-
-### Community 14 - "test_api.py"
-Cohesion: 0.10
-Nodes (6): client(), test_a_late_flare_list_does_not_block_a_go(), test_added_stops_are_saved_moved_planned_and_removed(), test_plan_layers_and_walkback_on_synthetic_terrain(), test_status_uses_mars_cme_arrivals_and_the_central_cache(), nasa()
-
-### Community 15 - "PlanResult.tsx"
+### Community 12 - "index.ts"
 Cohesion: 0.17
-Nodes (16): einkUrl(), PlanResult, RouteProfile, TimelineEntry, PlanResult(), Props, RULE_NAMES, RouteProfileChart() (+8 more)
+Nodes (16): OfflineError, addObservation(), listObservations(), refreshSources(), describeError(), useAddObservation(), useObservations(), useRefreshSources() (+8 more)
 
-### Community 16 - "index.ts"
+### Community 13 - "build_plan"
+Cohesion: 0.14
+Nodes (11): get_site(), Field, build_plan(), EVAPlan, Leg, PlanError, _profile(), usable_budgets() (+3 more)
+
+### Community 14 - "numpy"
+Cohesion: 0.20
+Nodes (11): Raster, _gauss_nan(), hillshade(), roughness(), slope(), steep_fraction(), walk_surface(), resample_to() (+3 more)
+
+### Community 15 - "raster.py"
+Cohesion: 0.13
+Nodes (8): bbox_window(), download(), read_bbox(), _source(), _to_float(), vsicurl(), write_geotiff(), test_geotiff_roundtrip_and_bbox_window()
+
+### Community 16 - "engine.ts"
+Cohesion: 0.16
+Nodes (12): Astronaut, makeAstronaut(), makeRover(), SimStatus, SimStop, TIME_SCALES, edgeTimeEnergy(), G_EARTH (+4 more)
+
+### Community 17 - "math"
+Cohesion: 0.26
+Nodes (10): _cos(), jd_tt(), local_times(), next_lmst(), planetographic_lat(), _sin(), solar(), sun_position() (+2 more)
+
+### Community 18 - "app.py"
+Cohesion: 0.15
+Nodes (7): AskIn, ObservationIn, PlanRequest, PointIn, SavePlanRequest, StopIn, StopPatch
+
+### Community 19 - "coverage.py"
+Cohesion: 0.14
+Nodes (7): agreement(), _crop(), hires_footprint(), _plane_removed(), register(), shifted(), usable()
+
+### Community 20 - "status.py"
+Cohesion: 0.20
+Nodes (8): current_status(), feed_requests(), _flare_rank(), go_no_go(), mars_arrivals(), parse_time(), SpaceWeatherStatus, test_go_no_go_rules()
+
+### Community 21 - "weighted.py"
+Cohesion: 0.15
+Nodes (4): kernel(), MetabolicCostModel, kernel(), WeightedHazardCostModel
+
+### Community 23 - "sim.py"
 Cohesion: 0.21
-Nodes (14): OfflineError, describeError(), useAddObservation(), useObservations(), useRefreshSources(), useSources(), useSpaceWeather(), SourceFeed (+6 more)
+Nodes (8): area(), _blocks(), _fill_nearest(), fine_bytes(), fine_meta(), _fine_window(), frame(), terrain_package()
 
-### Community 18 - "AskPanel.tsx"
+### Community 24 - "SimulationView.tsx"
+Cohesion: 0.24
+Nodes (16): einkLiveUrl(), simTextureUrl(), useSimFine(), useSimSun(), useSimTerrain(), useWalkHome(), clock(), COMPASS (+8 more)
+
+### Community 25 - "AskPanel.tsx"
 Cohesion: 0.21
 Nodes (15): useAsk(), AskPanel(), EXAMPLES, Props, canListen(), canSpeak(), ERRORS, listen() (+7 more)
 
-### Community 19 - "raster.py"
-Cohesion: 0.16
-Nodes (7): bbox_window(), read_bbox(), _source(), _to_float(), vsicurl(), write_geotiff(), test_geotiff_roundtrip_and_bbox_window()
-
-### Community 20 - "fetch.py"
-Cohesion: 0.17
-Nodes (6): fetch_site(), record(), raw_dir(), read_merged_dem(), _sha256(), download()
-
-### Community 21 - "SiteConfig"
-Cohesion: 0.28
-Nodes (11): Check, check_constants(), check_plan(), check_terrain(), _close(), markdown(), run(), _run_audit() (+3 more)
-
-### Community 22 - "EVAConfig"
-Cohesion: 0.27
-Nodes (9): get_site(), EVAConfig, check_distance_from_rover(), check_duration(), check_plan(), check_walkback_reserve(), Violation, usable_budgets() (+1 more)
-
-### Community 23 - "load_site"
-Cohesion: 0.23
-Nodes (10): _stub(), run(), load_eva(), load_site(), test_constants_match_their_sources(), test_all_points_inside_bbox(), test_eva_defaults(), test_required_products_present() (+2 more)
-
-### Community 24 - "config.py"
-Cohesion: 0.27
-Nodes (6): cmd_export(), load_stops(), _resolve(), site_payload(), write_json(), Path
-
-### Community 25 - "conftest.py"
-Cohesion: 0.20
+### Community 26 - "geo.py"
+Cohesion: 0.15
 Nodes (3): isolated_data(), no_network(), synthetic_site()
 
-### Community 26 - "test_geo.py"
-Cohesion: 0.39
-Nodes (8): dtm_grid(), test_bbox_window_covers_all_stops(), test_ground_distance_h1_s1(), test_known_pixel_for_h1(), test_known_pixel_for_s3(), test_pixel_size_matches_mars_degrees(), test_roundtrip_pixel_centre(), test_window_offsets()
+### Community 27 - "astar.py"
+Cohesion: 0.21
+Nodes (9): _arrays(), astar(), cost_field(), _one_leg(), _search(), snap(), leg(), test_route_goes_through_the_gap_and_never_enters_nogo() (+1 more)
 
-### Community 27 - "main.tsx"
+### Community 28 - "test_pure_logic.py"
+Cohesion: 0.17
+Nodes (5): order_stops(), tour_cost(), test_cost_models_switchable(), test_fixed_order_unchanged(), test_optimize_order_finds_cheaper_tour()
+
+### Community 29 - "render.py"
+Cohesion: 0.27
+Nodes (7): _alpha(), _colorize(), layer_png(), overlay_step(), _png(), safezone_fraction(), safezone_png()
+
+### Community 30 - "pytest"
+Cohesion: 0.21
+Nodes (7): test_simulator_terrain_texture_live_eink_and_live_ask(), test_config_stops_are_resynced_into_an_existing_database(), test_full_plan_timeline_margins_and_payload(), test_unknown_cost_model(), _centric(), test_mars24_worked_examples(), test_walk_start_and_track_at_gale()
+
+### Community 31 - "test_merged_dem.py"
+Cohesion: 0.22
+Nodes (5): merged_site(), surface(), test_overlays_and_notes_show_the_two_kinds_of_terrain(), test_smoother_merged_dem_is_set_aside(), write_merged()
+
+### Community 33 - "test_geo.py"
+Cohesion: 0.33
+Nodes (7): dtm_grid(), test_bbox_window_covers_all_stops(), test_known_pixel_for_h1(), test_known_pixel_for_s3(), test_pixel_size_matches_mars_degrees(), test_roundtrip_pixel_centre(), test_window_offsets()
+
+### Community 34 - "LayerStack"
+Cohesion: 0.29
+Nodes (5): bounds_lonlat(), coverage_note(), layer_list(), layer_notes(), LayerStack
+
+### Community 35 - "Terrain"
+Cohesion: 0.29
+Nodes (4): SimFineMeta, SimTerrain, b64(), Terrain
+
+### Community 36 - "model_from_eva"
+Cohesion: 0.31
+Nodes (4): CostModel, get_cost_model(), model_from_eva(), test_routes_stay_on_trusted_terrain()
+
+### Community 37 - "physics.py"
+Cohesion: 0.36
+Nodes (4): edge_time_energy(), metabolic_power_w(), walk_speed_mps(), test_walking_physics_is_directional_and_capped()
+
+### Community 38 - "client.ts"
+Cohesion: 0.28
+Nodes (6): ApiError, ErrorBody, parseError(), requestBytes(), staticJson(), getSimFine()
+
+### Community 40 - "read_geotiff"
+Cohesion: 0.29
+Nodes (4): read_geotiff(), _misregister_dtm(), test_configured_basemap_offset_puts_the_dtm_back_on_the_frame(), test_register_measures_a_georeferencing_offset()
+
+### Community 42 - "main.tsx"
 Cohesion: 0.29
 Nodes (3): createQueryClient(), shouldRetry(), queryClient
 
-### Community 28 - "geojson.d.ts"
+### Community 43 - "test_spaceweather_helpers"
+Cohesion: 0.33
+Nodes (3): eva_dose_mgy(), split_range(), test_spaceweather_helpers()
+
+### Community 44 - "geojson.d.ts"
 Cohesion: 0.33
 Nodes (5): Feature, FeatureCollection, GeoJSON, LineString, Position
 
 ## Knowledge Gaps
-- **12 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **23 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `create_app()` connect `create_app` to `test_pipeline.py`, `api_client.py`, `ask.py`, `eink.py`, `test_pure_logic.py`, `test_merged_dem.py`, `app.py`, `cli.py`, `numpy`, `test_api.py`, `SiteConfig`, `EVAConfig`, `load_site`, `config.py`?**
-  _High betweenness centrality (0.074) - this node is a cross-community bridge._
-- **Are the 4 inferred relationships involving `create_app()` (e.g. with `_warm()` and `EVAConfig`) actually correct?**
-  _`create_app()` has 4 INFERRED edges - model-reasoned connections that need verification._
-- **Should `test_pipeline.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.05471956224350205 - nodes in this community are weakly interconnected._
-- **Why does `GeoGrid` connect `GeoGrid` to `test_pipeline.py`, `test_merged_dem.py`, `Raster`, `numpy`, `raster.py`, `fetch.py`, `conftest.py`, `test_geo.py`?**
-  _High betweenness centrality (0.037) - this node is a cross-community bridge._
-- **Are the 4 inferred relationships involving `build_stack()` (e.g. with `EVAConfig` and `SiteConfig`) actually correct?**
-  _`build_stack()` has 4 INFERRED edges - model-reasoned connections that need verification._
-- **Should `create_app` be split into smaller, more focused modules?**
-  _Cohesion score 0.05434173669467787 - nodes in this community are weakly interconnected._
-- **Why does `build_stack()` connect `test_merged_dem.py` to `test_pipeline.py`, `create_app`, `ask.py`, `eink.py`, `Raster`, `app.py`, `cli.py`, `numpy`, `fetch.py`, `SiteConfig`, `EVAConfig`, `load_site`, `nogo_mask`?**
-  _High betweenness centrality (0.032) - this node is a cross-community bridge._
+- **Why does `create_app()` connect `create_app` to `load_site`, `api_client.py`, `ask.py`, `repo.py`, `EVAConfig`, `build_plan`, `app.py`, `pytest`?**
+  _High betweenness centrality (0.061) - this node is a cross-community bridge._
+- **Are the 18 inferred relationships involving `create_app()` (e.g. with `_warm()` and `AskContext`) actually correct?**
+  _`create_app()` has 18 INFERRED edges - model-reasoned connections that need verification._
+- **Should `load_site` be split into smaller, more focused modules?**
+  _Cohesion score 0.051582278481012656 - nodes in this community are weakly interconnected._
+- **Why does `SiteConfig` connect `load_site` to `create_app`, `ask.py`, `repo.py`, `EVAConfig`, `build_plan`?**
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
+- **Are the 22 inferred relationships involving `load_site()` (e.g. with `create_app()` and `cmd_export()`) actually correct?**
+  _`load_site()` has 22 INFERRED edges - model-reasoned connections that need verification._
+- **Should `api_client.py` be split into smaller, more focused modules?**
+  _Cohesion score 0.05407925407925408 - nodes in this community are weakly interconnected._
+- **Why does `Path` connect `load_site` to `api_client.py`, `repo.py`, `read_geotiff`, `build_plan`, `raster.py`, `astar.py`?**
+  _High betweenness centrality (0.031) - this node is a cross-community bridge._

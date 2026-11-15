@@ -25,6 +25,9 @@ def no_network(monkeypatch):
         raise OSError("network disabled in tests")
     monkeypatch.setattr(api_client, "http_get", offline)
     monkeypatch.delenv("NASA_API_KEY", raising=False)
+    # create_app() reads the developer's .env, which would put a personal key back
+    from marswalk.api import app as api_app
+    monkeypatch.setattr(api_app, "load_dotenv", lambda *a, **k: [])
 
 
 @pytest.fixture

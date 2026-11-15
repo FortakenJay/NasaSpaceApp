@@ -38,9 +38,14 @@ export function MapLegend({ mapView, safeZoneOn, hasRoute, hasAdded, walkLimitM,
           </li>
         )}
         {hasRoute && (
-          <li>
-            <span className="swatch line" /> Planned route
-          </li>
+          <>
+            <li>
+              <span className="swatch line" /> Out to the stops
+            </li>
+            <li>
+              <span className="swatch line back" /> Back to the rover
+            </li>
+          </>
         )}
         {hasAnswer && (
           <li>
@@ -48,9 +53,14 @@ export function MapLegend({ mapView, safeZoneOn, hasRoute, hasAdded, walkLimitM,
           </li>
         )}
         {showStraight && (
-          <li>
-            <span className="swatch line dashed" /> Straight line (not planned yet)
-          </li>
+          <>
+            <li>
+              <span className="swatch line dashed" /> Straight line out (not planned yet)
+            </li>
+            <li>
+              <span className="swatch line dashed back" /> Straight line back (not planned yet)
+            </li>
+          </>
         )}
         {walkLimitM !== null && (
           <li>
@@ -60,6 +70,26 @@ export function MapLegend({ mapView, safeZoneOn, hasRoute, hasAdded, walkLimitM,
         {mapView === 'nogo' && (
           <li>
             <span className="swatch box-nogo" /> Off limits: too steep or too rough
+          </li>
+        )}
+        {mapView === 'radio' && (
+          <li>
+            <span className="swatch box-radio" /> No radio contact with the rover: a ridge is in the way
+          </li>
+        )}
+        {mapView === 'uncertain' && (
+          <>
+            <li>
+              <span className="swatch box-unsure" /> Off limits in some versions of the terrain: the map cannot be sure
+            </li>
+            <li>
+              <span className="swatch box-nogo" /> Off limits in nearly every version
+            </li>
+          </>
+        )}
+        {mapView === 'shelter' && (
+          <li>
+            <span className="swatch box-shelter" /> Too far to reach the rover before a solar storm’s dose arrives
           </li>
         )}
         {safeZoneOn && (

@@ -60,6 +60,19 @@ export async function request<T>(path: string, init?: RequestInit & { json?: unk
   return (await r.json()) as T;
 }
 
+/** A binary answer (e.g. the simulator's 1 m grid), with the same error handling as request(). */
+export async function requestBytes(path: string): Promise<ArrayBuffer> {
+  let r: Response;
+  try {
+    r = await fetch(path);
+  } catch (e) {
+    throw new OfflineError(e);
+  }
+  if (r.status === 502 || r.status === 504) throw new OfflineError(`gateway ${r.status}`);
+  if (!r.ok) throw await parseError(r);
+  return r.arrayBuffer();
+}
+
 /** Static asset shipped with the app (public/), e.g. the offline sample site. */
 export async function staticJson<T>(file: string): Promise<T> {
   return request<T>(`${import.meta.env.BASE_URL}${file}`);

@@ -37,7 +37,9 @@ NUM = "|".join([r"\d{1,2}", *NUMBERS])
 
 TOPICS: list[tuple[str, str]] = [
     ("help", r"\b(help|what can (you|i) (ask|say|do)|how does this work)\b"),
-    ("distance", r"\b(how far|distance|far (is|are|from|away|to)|how many (meters|metres|kilometers|kilometres))\b"),
+    ("distance", (r"\b(how far|distance|far (is|are|from|away|to)|how many (meters|metres|kilometers|kilometres)"
+                  r"|path to|route to|way to|directions to|where is|where'?s)\b")),
+    ("go", r"\b((go|head|walk|get|take me|navigate) to)\b"),
     ("travel_time", (r"\b(how long (does it take |will it take |would it take |is it )?(to|until) (walk|get|go|reach|hike)"
                     r"|time to (walk|get|reach)|how many minutes (to|until))\b")),
     ("walk_home", (r"\b(walk(ing)? (home|back)|get(ting)? (home|back)|make it (home|back)|head(ing)? (home|back)"
@@ -58,7 +60,7 @@ TOPICS: list[tuple[str, str]] = [
     ("untracked", (r"\b(water|drink|thirst|thirsty|food|eat|battery|batteries|temperature|cold|heat|hot|co2"
                   r"|carbon dioxide|suit pressure|cooling)\b")),
 ]
-ROUTE_TOPICS = {"distance", "travel_time"}
+ROUTE_TOPICS = {"distance", "travel_time", "go"}
 STAY_WORDS = re.compile(r"\b(stay|spend|remain|last|left|keep)\b")
 
 
@@ -95,6 +97,8 @@ class AskContext:
     cost: str | None = None                            # cost model of that plan
     selected_stop_id: str | None = None
     elapsed_h: float = 0.0
+    live: tuple[float, float] | None = None           # (lat, lon) of a walker, e.g. in the simulator: that is "here"
+    visited: list[str] | None = None                  # stops already done (live mode): "the next stop" skips them
     stack: Callable[[], object] | None = None          # -> LayerStack, or None when the terrain is not fetched
     walkback: Callable[[object], object] | None = None   # stack -> reverse Field from the rover (cached by the API)
     status: Callable[[], dict] | None = None           # -> space-weather status dict
@@ -213,6 +217,9 @@ def _ordinal_stop(word: str, ctx: AskContext, here: Place, places: dict[str, Pla
         i = ORDINALS[word]
         return places.get(order[i].upper()) if -len(order) <= i < len(order) else None
     # next / previous, relative to "here"
+    if ctx.visited is not None and word == "next":
+        left = [i for i in order if i not in set(ctx.visited)]
+        return places.get(left[0].upper()) if left else next((p for p in places.values() if p.kind == "start"), None)
     tl = [w for w in (ctx.plan or {}).get("timeline", []) if w["kind"] == "stop"]
     if here.id and here.id in order:
         i = order.index(here.id) + (1 if word == "next" else -1)
@@ -229,6 +236,10 @@ def _ordinal_stop(word: str, ctx: AskContext, here: Place, places: dict[str, Pla
 def resolve_here(ctx: AskContext) -> Place:
     """The selected stop, else the planned position at the slider time, else the rover."""
     by_id = {s["id"]: s for s in ctx.stops}
+    if ctx.live is not None:
+        t = ctx.elapsed_h * 60.0
+        return Place(None, "position", ctx.live[0], ctx.live[1], "position", f"your position, {hm(t)} into the walk",
+                     "your position", arrive_min=t, depart_min=t, is_here=True)
     if ctx.selected_stop_id and ctx.selected_stop_id in by_id:
         p = _stop_place(by_id[ctx.selected_stop_id], ctx.plan)
         p.label = f"{p.label}, the stop selected on the map" if p.kind != "start" else "the rover (selected on the map)"
@@ -359,11 +370,26 @@ def answer_route(ctx: AskContext, origin: Place, target: Place, out: list) -> st
     if path is None:
         return head + " There is no walkable route between them inside the slope and roughness limits."
     m = _budgets(ctx)["margin"]
-    out += [_line(stack, path.cells, "route"), _point(origin.lat, origin.lon, "here" if origin.is_here else "from", origin.short),
+    out.append(_line(stack, path.cells, "route"))
+    _append_return(ctx, stack, target, out)
+    out += [_point(origin.lat, origin.lon, "here" if origin.is_here else "from", origin.short),
             _point(target.lat, target.lon, "to", target.short)]
     climb = f", climbing {path.climb_m:.0f} m and descending {path.descent_m:.0f} m" if path.climb_m + path.descent_m >= 5 else ""
     return (head + f" On foot, the safest route is {dist_text(path.distance_m)}: about {hm(path.time_s / 60 * m)} "
             f"with the {round((m - 1) * 100)}% time margin{climb}.")
+
+
+def _append_return(ctx: AskContext, stack, target: Place, out: list) -> None:
+    """The walk back from the target to the rover, so a 'go there' has a way out and a way home."""
+    if ctx.walkback is None:
+        return
+    rc = _cell(stack, target)
+    back = ctx.walkback(stack)
+    if rc is None or not back.reached(rc):
+        return
+    cells = back.trace(rc)
+    if len(cells) > 1:
+        out.append(_line(stack, cells, "back"))
 
 
 def answer_walk_home(ctx: AskContext, origin: Place, out: list) -> str:
@@ -525,16 +551,17 @@ def answer_limits(ctx: AskContext) -> str:
                 f"{s['energy_budget_used_pct']}% of the effort budget, and never steeper than {s['max_grade_deg']}° underfoot.")
     hard = [x for x in v if x["severity"] == "no-go"]
     lead = "This walk breaks a hard limit" if hard else "This walk needs care"
-    return lead + ": " + "; ".join(f"{x['where']}: {x['detail']}" for x in v[:4]) + "."
+    return lead + ": " + "; ".join(f"{x['where']}: {x['detail']}" if x["where"] else x["detail"] for x in v[:4]) + "."
 
 
 UNTRACKED = {"water": "water", "drink": "water", "thirst": "water", "thirsty": "water", "food": "food", "eat": "food",
              "battery": "suit battery", "batteries": "suit battery", "temperature": "temperature", "cold": "temperature",
              "heat": "temperature", "hot": "temperature", "co2": "carbon dioxide", "carbon": "carbon dioxide",
              "pressure": "suit pressure", "cooling": "cooling water"}
-HELP = ("You can ask: “How far is S3 from here?”, “How long to walk home from S5?”, “How much oxygen does this walk "
-        "use?”, “How much radiation?”, “How steep is S2?”, “When must we turn back?”, “Is it safe to go out?” "
-        "Here means the stop you selected, else the time on the step 4 slider, else the rover.")
+HELP = ("You can ask: “How far is S3 from here?”, “Path to U1 from here”, “Go to S3”, “How long to walk home from S5?”, "
+        "“How much oxygen does this walk use?”, “How much radiation?”, “How steep is S2?”, “When must we turn back?”, "
+        "“Is it safe to go out?” Here means the stop you selected, else the time on the step 4 slider, else the rover. "
+        "Go, or press Go, to make that place the next stop.")
 
 
 def _cap(s: str) -> str:
@@ -573,6 +600,7 @@ def answer(question: str, ctx: AskContext) -> dict:
     feats: list[dict] = []
     done: set[str] = set()
     used: list[Place] = []          # the places the answer is about, to say whether "here" was used
+    go_to: dict | None = None       # a stop the crew can make the next stop on the walk
     for t in topics:
         if t in done or len(texts) >= 3:
             continue
@@ -583,8 +611,13 @@ def answer(question: str, ctx: AskContext) -> dict:
             if target is None:
                 texts.append("Which place? Name a stop, for example “How far is S3 from here?”")
             else:
+                before = len(feats)
                 texts.append(answer_route(ctx, origin, target, feats))
                 used += [origin, target]
+                routed = any(f.get("properties", {}).get("role") == "route" for f in feats[before:])
+                if routed and target.id and target.kind in ("stop", "user"):
+                    go_to = {"id": target.id, "label": target.short}
+                    texts[-1] += f" Press Go to head to {target.short}."
         elif t == "walk_home":
             frm = origin if origin_m else next((m.place for m in named if m.place.kind != "start"), None) or here
             texts.append(answer_walk_home(ctx, frm, feats))
@@ -624,4 +657,5 @@ def answer(question: str, ctx: AskContext) -> dict:
     return {"question": question, "answer": text, "speech": spoken(text), "topics": [t for t in topics if t in done] or topics,
             "here": {"label": here.label, "lat": round(here.lat, 7), "lon": round(here.lon, 7),
                      "used": any(p is not None and p.is_here for p in used)},
-            "highlight": {"type": "FeatureCollection", "features": feats} if feats else None}
+            "highlight": {"type": "FeatureCollection", "features": feats} if feats else None,
+            "go_to": go_to}

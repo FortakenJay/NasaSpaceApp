@@ -19,6 +19,11 @@ and Analysis Tool for Planetary Exploration", AIAA SPACE 2010 (Table 1: Marquez 
 - Terrain multipliers: (1 + roughness_penalty_per_m * roughness) and sand_penalty on loose sand. They
   stretch time (you walk slower), and energy follows because power is held.
 - Edges steeper than max_grade_deg are not walkable (returned as inf).
+- Optional gait limit (walk_run_froude > 0): walking speed is capped at the walk-run transition,
+  v = sqrt(Fr g L). Kram, Domingo & Ferris 1997 (J. Exp. Biol. 200: 821, Table 1) measured the preferred transition
+  at 1.39 +- 0.06 m/s at 0.4 g, Froude 0.56, leg length 0.89 m (unsuited subjects); Fr = 0.56 and L = 0.89 m give
+  1.36 m/s at 3.71 m/s^2, below the curve's 1.6 m/s on the flat. Above the cap a walker would lope; no loping model
+  is used, so the cap means "the crew walks". Off by default (walk_run_froude = 0).
 """
 from __future__ import annotations
 
@@ -27,17 +32,25 @@ import math
 import numba
 
 # index layout of the physics block inside a params array
-G, G_EARTH, BODY, SUIT, ROUGH_PEN, SAND_PEN, MAX_GRADE = range(7)
+G, G_EARTH, BODY, SUIT, ROUGH_PEN, SAND_PEN, MAX_GRADE, V_CAP = range(8)
 PHYSICS_ORDER = ("gravity_mps2", "earth_gravity_mps2", "body_mass_kg", "suit_mass_kg",
-                 "roughness_penalty_per_m", "sand_penalty", "max_grade_deg")
+                 "roughness_penalty_per_m", "sand_penalty", "max_grade_deg", "walk_speed_cap_mps")
 PHYSICS_DEFAULTS = {"gravity_mps2": 3.71, "earth_gravity_mps2": 9.81, "body_mass_kg": 80.0, "suit_mass_kg": 60.0,
-                    "roughness_penalty_per_m": 2.0, "sand_penalty": 1.2, "max_grade_deg": 20.0}
+                    "roughness_penalty_per_m": 2.0, "sand_penalty": 1.2, "max_grade_deg": 20.0,
+                    "walk_run_froude": 0.0, "leg_length_m": 0.89}
 MIN_POWER_W = 60.0
+
+
+def walk_speed_cap(cfg: dict | None) -> float:
+    """Walk-run transition speed sqrt(Fr g L) in m/s, or inf when the gait limit is off (walk_run_froude <= 0)."""
+    cfg = {**PHYSICS_DEFAULTS, **(cfg or {})}
+    fr = float(cfg["walk_run_froude"])
+    return math.sqrt(fr * float(cfg["gravity_mps2"]) * float(cfg["leg_length_m"])) if fr > 0 else math.inf
 
 
 def physics_params(cfg: dict | None) -> list[float]:
     cfg = cfg or {}
-    return [float(cfg.get(k, PHYSICS_DEFAULTS[k])) for k in PHYSICS_ORDER]
+    return [float(cfg.get(k, PHYSICS_DEFAULTS[k])) for k in PHYSICS_ORDER[:-1]] + [walk_speed_cap(cfg)]
 
 
 @numba.njit(cache=True)
@@ -68,12 +81,13 @@ def metabolic_power_w(mass_kg, g, g_earth, grade_deg, v):
 
 
 @numba.njit(cache=True)
-def edge_time_energy(g, g_earth, mass_kg, rough_pen, sand_pen, max_grade_deg, dz_m, run_m, rough_m, sand):
-    """(time_s, energy_kj) to walk one edge; (inf, inf) if the edge is steeper than max_grade_deg."""
+def edge_time_energy(g, g_earth, mass_kg, rough_pen, sand_pen, max_grade_deg, dz_m, run_m, rough_m, sand, v_cap):
+    """(time_s, energy_kj) to walk one edge; (inf, inf) if the edge is steeper than max_grade_deg.
+    v_cap: walking speed limit in m/s (inf = none; see walk_speed_cap)."""
     grade = math.degrees(math.atan2(dz_m, run_m))
     if abs(grade) > max_grade_deg:
         return math.inf, math.inf
-    v = walk_speed_mps(grade)
+    v = min(walk_speed_mps(grade), v_cap)
     mult = 1.0 + rough_pen * max(rough_m, 0.0)
     if sand > 0.5:
         mult *= sand_pen
