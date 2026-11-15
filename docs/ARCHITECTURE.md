@@ -1,9 +1,119 @@
 # MarsWalk Traverse Planner: Architecture
 
-Status: **skeleton v0.3** (2026-11-13). Stack: GDAL/rasterio + numba + SQLite/SQLAlchemy + FastAPI + React/TypeScript/
-TanStack Query/OpenLayers. Interfaces, configs, data contracts, the DB, the API and the React app are in place and verified
-end to end. React Doctor scores 100/100. Planning algorithms are stubs that raise `NotImplementedError("Mx: …")`,
-with the spec in each module docstring.
+Status: **v1.1** (2026-11-15). M1-M5 are built and run on the real Gale data: fetch, layers, numba cost kernels,
+least-cost search, plan assembly, walk-back safe zone, space weather, overlays, voice, suit display, audit and the walk
+simulator. 99 pytest tests; `marswalk audit` 38 of 38 checks plus one finding; 25 simulator checks in the browser
+(`?qa=1`). Open: M6 3-D planning table (spec only). The sections below are newest first; the v0.3 design and the
+milestone table further down are kept as the record of how it was planned.
+
+### Added in v1.1 (operations layers, gait, consumables, engine round)
+- **Radio shadow** (`layers/radio.py`): numba ray sweep of line of sight from the rover's antenna (`[comms]` heights,
+  Mars curvature) over the walk-back reach; `route.plan.radio_field`, cached in the API like the walk-back field;
+  `/api/layers/radio.png`; 2 bits per cell (`fine.bin`) for the simulator.
+- **Exposure** (`route/exposure.py`): minutes of the plan out of radio contact, minutes beyond storm-shelter reach
+  (`eva.sep_warning_lead_min`, Löwe et al. 2025), and metres on uncertain ground; summary fields and cautions
+  (`radio_shadow`, `storm_shelter`, `marginal_ground`). `/api/layers/shelter.png`.
+- **Terrain uncertainty** (`layers/uncertainty.py`): off-limits frequency over 20 perturbed terrains on the walk area
+  (`products.dtm.uncertainty` in the site config); `/api/layers/uncertain.png` with its own bounds.
+- **Gait limit** (`cost/physics.py`): an 8th physics parameter `walk_speed_cap_mps` = √(Fr g L) from
+  `walk_run_froude`, `leg_length_m` (off by default); both kernels and `physics.ts` take it.
+- **Consumables** (`consumables.py`): the limiting consumable in the plan summary and on the suit display.
+- **Clock**: `sun.mars_sol_date`, `sun.local_sol`; `track()` returns `sol`; the suit display footer shows sol and LTST.
+- **Audit findings**: `Check.finding` marks a model assumption compared with data (⚠️, never a failure).
+- **Simulator data**: `terrain.bin` (3 m heights + off-limits, binary instead of base64 JSON) and `fine.bin` v2 (walk
+  heights, terrain heights, roughness, sand, off-limits, radio shadow); URLs versioned by `sim.FORMAT` and the data stamp.
+- **Engine** (`frontend/src/sim/`): fixed 1/60 s ticks with interpolated drawing, sleep when idle, HUD snapshots only on
+  visible change (`useSyncExternalStore`), 1 m near-field patch + 3/6/12 m tiles with skirts, optional 1 m normal map,
+  synthesized sound (`audio.ts`), in-browser QA (`qa.ts`).
+- **Parity test** (`tests/test_physics_parity.py`): Node runs `physics.ts` against `cost/physics.py` directly.
+
+### Added in v1.0 (walk simulator, live position)
+- **`sim.py` + `GET /api/sim/terrain|texture.png`:** a window around the stops (400 m margin) as 3 m blocks: mean
+  heights as uint16 cm (base64), off-limits bits (a block is no-go if any 1 m cell is), the local frame (x east,
+  z south, metres from the rover) and physics constants from `configs/`; the texture is the orthophoto shifted by
+  `basemap_offset_m` and tinted (hillshade where there is no photo), or the off-limits overlay. Cached per raw-data
+  stamp.
+- **Live position:** `eink.live_moment()` routes A* from (lat, lon) to the next unvisited stop and reports schedule
+  delta against the plan; `/api/eink.*` take `lat, lon, walked_m, energy_kj, visited`. `AskContext.live` makes "here"
+  the walker's position and skips visited stops.
+- **Frontend `src/sim/` (Three.js 0.170, lazy-loaded):** `terrain.ts` decodes the package (bilinear heights, no-go
+  lookups); `physics.ts` ports the speed and metabolic models (matches Python to 3 d.p.); `engine.ts` steps mission
+  time in 0.5 s slices (speed from the grade 1 m ahead, power, work at 250 W, idle power, reserve and dry tank) and
+  renders sky dome, fog, shadowed sun, route (Line2), trail, beacons and rover; `SimulationView.tsx` is the HUD
+  (status, minimap, distances, live e-ink, Ask with mic, help, pause, debrief). The game reaches the backend only
+  through `src/api`, like the rest of the app. QA: `frontend/src/sim/qa.ts`, run in the app with `?qa=1` (v1.1).
+- **Physics = planner, step for step:** `sim.fine_bytes()` / `GET /api/sim/fine.bin` ship the stack's own 1 m
+  `walk_elev_m`, `roughness_m`, `sand` and `nogo` for the window; `WalkGrid` reads grades 1 m ahead on the walk surface,
+  speed `walk_speed(grade) / ((1 + k_rough * rough) * sand_pen)` along the slope, power at the model speed, and refuses
+  grades past `max_grade_deg` (`physics.ts edgeTimeEnergy` == `cost/physics.py edge_time_energy`). The 3 m mesh is only
+  drawn.
+- **Sun:** `sun.py` is Mars24 (Allison & McEwen 2000), tested against both GISS worked examples; `GET /api/sim/sun` tracks
+  azimuth/elevation every 2 min from the next `[eva] start_lmst_h` at the rover. The engine drives the directional
+  light, hemisphere light, fog, sky shader (blue halo when low) and a 0.35° Sun disc from it.
+
+### Added in v0.9 (voice, suit display, audit)
+- **`ask.py` + `POST /api/ask`:** keyword parser (topics + places, speech-to-text spellings) answering from the stored
+  plan, the stack, the walk-home field and the space-weather status. Returns text, speech text, topics, "here",
+  and GeoJSON highlights. Frontend: `voice.ts` (browser speech in and out), `AskPanel` on the map.
+- **`eink.py` + `GET /api/eink.png|.bin`:** 800 x 480 1-bit navigation screen at any moment of a plan; `.bin` is
+  48 000 bytes, MSB first, 1 = black. `SuitDisplayPanel` (step 5) previews and plays it; `firmware/suit_display` is
+  the ESP32 + Waveshare 7.5" V2 sketch. Fonts: Barlow TTF in `eink_fonts/` (SIL OFL 1.1).
+- **`audit.py` + `marswalk audit`:** 30 independent recomputations (constants vs sources, walking model, terrain,
+  plan arithmetic, safety, radiation); `docs/wiki/Audit-results.md`. Fixes it drove: O2 energy equivalent 20.9 ->
+  20.19 kJ/L; route distance/climb on the walking surface instead of the noisy 1 m DTM; RAD dose equivalent 0.67 ->
+  0.64 mSv/day.
+- `api_client.plain_error()` turns transport errors into one sentence; the optional flare feed gets 30 s.
+- Docs: `docs/wiki/` (wiki pages), `docs/img/` (screenshots and suit-display frames), `docs/graph/` (graphify).
+
+### Added in v0.8 (terrain over the whole map, and on the right spot)
+- **Merged DEM base:** `[products.merged_dem]` = USGS `MSL_Gale_DEM_Mosaic_1m_v3` (GeoTIFF on S3, LZW, one row per
+  strip, so a window read pulls whole 33 km rows: ~0.5 GB for the rover +- 3 km window). `fetch` writes
+  `raw/dem_merged.tif` (optional: on failure the app plans on the HiRISE strip alone). `read_bbox(crs=...)` takes the
+  CRS from the config instead of parsing the file's Mars WKT, and `read_merged_dem` refuses a window whose centre lands
+  > 250 m from the bbox centre.
+- **Planning footprint:** `layers/coverage.py`. The stack sits on the merged grid; the HiRISE DTM, resampled onto it and
+  trimmed 6 px from its ragged edge, is the only area routes may use (`LayerStack.coarse` = the rest, always no-go).
+  Overlays fade `coarse` cells; the off-limits view shows them grey. `agreement` compares the two DEMs inside the
+  footprint (median |slope difference|, elevation offset, roughness ratio); if the merged DEM disagrees (> 4 deg) or is
+  smoother (< 75 % of the HiRISE roughness, which would hide rocks), the stack falls back to the HiRISE strip alone and
+  the map key says why.
+- **Registration:** the HiRISE DTM's georeferencing is 45 m off the USGS/MSL base map (33.5 m S, 30.5 m E of it), which
+  the Mars Trek `curiosity_hirise_mosaic`, the merged DEM and the Curiosity waypoint coordinates all share. Measured
+  2026-11-14 by block cross-correlation: DTM vs merged DEM r = 0.9998 at (33 m N, 30 m W) vs 0.935 unshifted; HiRISE
+  ortho vs Trek photo r = 0.93 at (34 m N, 31 m W) vs 0.47 unshifted. `products.dtm.basemap_offset_m` applies it at load
+  time; with the merged DEM present, `coverage.register` re-measures the residual (4 m blocks, 512 m patch, +- 60 m,
+  sub-metre parabola) and applies it when r >= 0.9. Before v0.8 every overlay, route and stop value was read 45 m off.
+  H1 was picked on the DTM's own frame, so `stops.json` moves it by the same offset; S1-S5 are rover waypoints, already
+  in the base-map frame. Config stops in an existing DB are re-synced from `stops.json` at start-up.
+- **Memory:** overlays are subsampled before colouring (the 6.2 k x 6.2 k grid would otherwise need ~4.5 GB);
+  a full stand-in run peaks at ~2.5 GB (stack ~19 s incl. registration, walk-back field ~13 s, overlays ~1.5 s).
+
+### Added in v0.5 / v0.6
+- **Space weather (M5):** `spaceweather/status.py` asks DONKI for WSA-ENLIL runs (their `impactList` names Mars), SEP events
+  and flares, in parallel with a 20 s cap; requests go over IPv4 first and fall back to the system `curl`. Unreachable or
+  partial feeds give CAUTION with `data_ok = false`. Results are cached for 30 minutes (memory + `data/cache/spaceweather.json`).
+- **Saved stops:** `POST/PATCH/DELETE /api/stops` (repo: `add_stop`, `update_stop`, `delete_stop`). Added stops have kind
+  `user` and codes U1, U2, ...; science stops answer 403. A spot off the terrain or off limits answers 422.
+  `POST /api/plan` now reads its stops from the DB, so added stops plan like the science stops.
+- **Terrain window = walk range:** `site.bbox` is the rover +- 2.3 km; the walk-back field stops at 1.1 x the walk limit.
+  `fetch` re-reads everything when the bbox differs from the cached manifest. `serve` warms the stack and the field up
+  in a background thread (about 20 s on the larger window).
+- **Stale-install guard:** `/api/site` returns `api_version` and `project_root`; the app shows a banner when the service
+  is an older copy, and the CLI warns when it runs from a different folder than the current one.
+- **App:** four-step checklist (stops, plan, check, walk home); map view switch, key, and the 2 km walk-limit ring.
+
+### What changed from the v0.3 design
+- **One compiled search core** (`route/astar.py::_search`) does both goal-directed A* (per leg) and one-to-all Dijkstra.
+  A reverse Dijkstra from the rover is the walk-back field: it feeds the per-waypoint margins, the margin profile, the
+  safe-zone overlay and `GET /api/walkback`. Legs take ~0.1 s, the field ~4 s on the Gale window (7.3 M cells), cached.
+- **Edge grades come from a stride-scale smoothed DTM** (`LayerStack.walk_elev_m`, Gaussian sigma 2 px). Raw 1 m
+  cell-to-cell differences carry ~0.2 m stereo noise, which would read as +-10 deg steps and inflate energy everywhere.
+- **Edge slope cap** `max_grade_deg` (20) in addition to the cell no-go mask. Diagonal steps may not cut a no-go corner.
+- **Terrain routes answer 409** ("run marswalk fetch") instead of 501 when the DTM is not cached. `/api/layers` is `[]` then.
+- **Stack is memoised in-process**, not written to `stack.npz` (it rebuilds in ~2.5 s). Overlay PNGs are cached on disk
+  and capped at 2048 px on the long side.
+- **Walking physics** (`cost/physics.py`): Santee-form metabolic power and a piecewise speed-vs-slope curve, as SEXTANT
+  used. The coefficients were entered from the published forms and must be checked against the thesis before being cited.
 
 ## Goal
 Plan a safe walking route for a suited 2-person crew from a parked pressurized rover (H1) through
@@ -73,7 +183,8 @@ React components ──hooks──► src/api/queries.ts ──► src/api/endpo
 | `sources/fetch.py` | `marswalk fetch`: DTM, ortho, TI windows → GeoTIFF cache + manifest | M1 |
 | `layers/terrain.py` | slope (1 m, 5 m), roughness, steep fraction, hillshade | M2 |
 | `layers/thermal.py` | TI → DTM grid via `rasterio.warp.reproject`, sand flag | M2 |
-| `layers/stack.py` | `LayerStack` (numba-ready arrays) ✅; `nogo_mask` ✅; `build_stack` | M2 |
+| `layers/stack.py` | `LayerStack` (numba-ready arrays) ✅; `nogo_mask` ✅; `build_stack` (merged base + HiRISE footprint) | ✅ |
+| `layers/coverage.py` | `shifted`, `register` (HiRISE onto the base-map frame), `hires_footprint`, `agreement`, `usable` | ✅ v0.8 |
 | `cost/base.py` | `CostModel` contract: `params` array + njit `kernel` + `min_rate`; factory ✅ | ✅ interface |
 | `cost/metabolic.py`, `cost/weighted.py` | params arrays ✅; edge kernels | M3 |
 | `route/astar.py` | numba A*, crop window, start/goal snapping | M3 |
@@ -102,17 +213,23 @@ React components ──hooks──► src/api/queries.ts ──► src/api/endpo
 | GET | `/api/plans` | saved plans, newest first | ✅ `usePlans` |
 | POST | `/api/plans` | save `{name?, cost, order, stop_ids}` → 201 (`status: requested`) | ✅ `useSavePlan` |
 | GET | `/api/plans/{id}` | one saved plan | ✅ |
-| POST | `/api/plan` | compute `{cost?, order?, stop_ids?}` → `{route, summary, violations}`, persisted as a `computed` plan | 501 M4 · `useComputePlan` |
-| GET | `/api/layers` | `[{name, url, bounds:[lon_min,lat_min,lon_max,lat_max], opacity}]` | `[]` until M2 · `useLayers` |
-| GET | `/api/layers/{name}.png` | overlay PNG (hillshade, slope5, roughness, ti, nogo) | 501 M2 |
-| GET | `/api/status` | `{level, reason, …}` | 501 M5 · `useSpaceWeather` |
+| POST | `/api/plan` | compute `{cost?, order?, stop_ids? \| points?}` → `{route, summary, timeline, profile, violations, plan_id?}`; site-stop plans are persisted as `computed` | ✅ `useComputePlan` (409 until fetched) |
+| GET | `/api/walkback?lat&lon&elapsed_h&cost` | `{reachable, safe, walkback_min, walkback_kj, margin_min, route}` for one point | ✅ (no hook yet) |
+| GET | `/api/layers` | `[{name, key, url, bounds:[lon_min,lat_min,lon_max,lat_max], opacity}]` | ✅ `useLayers` (`[]` until fetched) |
+| GET | `/api/layers/{name}.png` | overlay PNG (hillshade, slope5, roughness, ti, nogo, safezone`?elapsed_h=`) | ✅ |
+| GET | `/api/status` | `{level, reason, …}` | ✅ `useSpaceWeather` (M5 built in v0.5) |
+| GET | `/api/sim/terrain`, `/api/sim/terrain.bin`, `/api/sim/fine.bin`, `/api/sim/sun`, `/api/sim/texture.png` | the simulator's data (see v1.0 and v1.1 above) | ✅ |
+| GET | `/api/layers/{radio,shelter,uncertain}.png` | operations overlays (v1.1) | ✅ |
 
 Not-yet-built stages answer `501 {"milestone": "Mx", "detail": …}`; unknown stops/plans answer 404; invalid bodies 422.
 The app shows these messages instead of failing. TypeScript mirrors live in `frontend/src/api/types.ts`; keep them in
 sync with `export/payload.py` and `db/repo.py`.
 
 ## Quality checks
-- `pytest`: 33 tests (geo, config, pure logic, API + DB on an in-memory SQLite per test, architecture boundaries).
+- `pytest`: 99 tests (geo, config, pure logic, pipeline on synthetic terrain, API + DB on an in-memory SQLite per
+  test, architecture boundaries, audit, Sun, physics parity with the TypeScript, sound absorption).
+- `marswalk audit`: 38 independent recomputations on the real data, plus model-vs-data findings.
+- Simulator: 25 in-browser checks (`?qa=1`).
 - `npm --prefix frontend run lint`: ESLint (typescript-eslint, react-hooks, API-boundary rules).
 - `npm --prefix frontend run doctor`: React Doctor, **100/100** on 2026-11-13. It first found 3 issues, all fixed: the map
   click listener and OL map weren't disposed on unmount, a constant was exported from a component file, and the
@@ -155,7 +272,11 @@ sync with `export/payload.py` and `db/repo.py`.
 | M6 | CesiumJS planning table | 3-D Mars terrain from the DTM, route draped, EVA timeline playback |
 | Later | Helmet HUD, deferred layers and features | See the plan's "Later" section |
 
-## Verified facts this design relies on (2026-11-13)
+## Verified facts this design relies on (2026-11-13, merged DEM and registration 2026-11-14)
+- USGS merged Gale DEM v3: `https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mars/MSL/MSL_Gale_DEM_Mosaic_1m_v3.tif`,
+  3,868,256,546 bytes, 32980 x 57440 px float32, LZW, RowsPerStrip 1, IFD at the end of the file, PixelIsPoint,
+  tie point (8127993.99, -244781.58) in eqc lon_0 = 0 on R = 3396190, nodata -32767. Range reads work (206).
+  Decoded rows put it ~15 m below the HiRISE DTM in elevation (like Curiosity's elev_geoid).
 - GDAL opens the DTM (PDS driver) and the THEMIS TI mosaic (ISIS3 driver) over `/vsicurl/`. S3 → pixel (4613, 4032)
   on the DTM; TI at S3 = 397, at H1 = 395 (matches the earlier manual reads).
 - DTM grid: `+proj=eqc +lon_0=137.38 +R=3396190`, transform in `configs/sites/gale_boxwork.toml`.

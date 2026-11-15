@@ -5,8 +5,9 @@
 id = "gale_boxwork"
 name = "Gale crater / Mount Sharp boxwork"
 stops_file = "data/sites/gale_boxwork/stops.json"
-# Analysis window (deg). Covers H1..S5 plus margin for routing.
-bbox = { lat_min = -4.8130, lat_max = -4.7880, lon_min = 137.355, lon_max = 137.405 }
+# Analysis window (deg): the rover H1 +- 3.0 km, i.e. everything inside the 2 km walk limit plus a 1 km margin.
+# (v0.5 used a 1.5 x 3 km box around the stops. After changing this, `marswalk fetch` re-reads the window.)
+bbox = { lat_min = -4.8494, lat_max = -4.7482, lon_min = 137.3346, lon_max = 137.4358 }
 
 [body]
 radius_m = 3396190.0          # Mars 2000 sphere used by HiRISE/THEMIS products
@@ -23,6 +24,29 @@ crs = "+proj=eqc +lat_ts=0 +lat_0=0 +lon_0=137.38 +x_0=0 +y_0=0 +R=3396190 +unit
 transform = [1.0117467945795, 0.0, -4018.6582680699767, 0.0, -1.0117467945795, -280315.578653001]
 width = 7426
 height = 18270
+# The DTM's own georeferencing sits 45 m from the USGS/MSL Gale base map that the Mars Trek photo mosaic and the
+# merged DEM below share (measured 2026-11-14 by cross-correlating the DTM with both: 33 m north, 30 m west).
+# Layers move by this much at load time so they sit on the photo; stops.json is already in the base-map frame.
+basemap_offset_m = { east = -30.5, north = 33.5 }
+# Terrain uncertainty (layers/uncertainty.py). This DTM's own expected vertical precision is not in its PDS label or
+# README; 1 m HiRISE DTMs are "tens of cm" (Sutton et al. 2022, Remote Sensing 14: 2403), "under 0.5 m for most"
+# (Sutton et al., LPSC 2015). Assumption: 0.3 m. At 0.5 m the "sometimes off limits" share of the walk area triples.
+# Registration: the measured residual after the configured shift is sub-metre (coverage.register); 0.5 m assumed.
+uncertainty = { vertical_sigma_m = 0.3, registration_sigma_m = 0.5, draws = 20, noise_corr_px = 1.0 }
+
+# Wider terrain: the USGS merged 1 m Gale DEM (Parker & Calef, 2016; HRSC + CTX + HiRISE DEMs tied to MOLA).
+# It fills the whole analysis window, where the HiRISE strip above covers only part of it. The merged DEM is the
+# base surface; the HiRISE strip stays the only area where routes may be planned (the merged model's real
+# detail varies between sources). Set enabled = false to plan on the HiRISE strip alone.
+# GeoTIFF, LZW, one row per strip (a window read downloads whole rows: ~80 KB per row, ~0.5 GB for this window).
+[products.merged_dem]
+id = "MSL_Gale_DEM_Mosaic_1m_v3"
+url = "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mars/MSL/MSL_Gale_DEM_Mosaic_1m_v3.tif"
+format = "geotiff"
+enabled = true
+crs = "+proj=eqc +lat_ts=0 +lat_0=0 +lon_0=0 +x_0=0 +y_0=0 +R=3396190 +units=m +no_defs"
+nodata = -32767.0
+# Checked 2026-11-14 over HTTP range reads: 32980 x 57440 px, 1 m, lat -5.0987..-4.1296, lon 137.1242..137.6806.
 
 [products.dtm_crosscheck]
 id = "DTEEC_009149_1750_009294_1750_U01"
@@ -55,6 +79,18 @@ optional = true               # covers S2 only
 url_template = "https://trek.nasa.gov/tiles/Mars/EQ/curiosity_hirise_mosaic/1.0.0/default/default028mm/{z}/{y}/{x}.png"
 max_zoom = 16
 
+# Wider imagery drawn UNDER the HiRISE mosaic, so the map is never empty when zoomed out (bottom first).
+# Both verified on Mars Trek 2026-11-14; the two mosaics above them are transparent outside their coverage.
+[[products.context_tiles]]
+name = "THEMIS daytime infrared (global, 100 m)"
+url_template = "https://trek.nasa.gov/tiles/Mars/EQ/THEMIS_DayIR_ControlledMosaics_100m_v2_oct2018/1.0.0/default/default028mm/{z}/{y}/{x}.png"
+max_zoom = 9
+
+[[products.context_tiles]]
+name = "CTX mosaic of Gale crater (6 m)"
+url_template = "https://trek.nasa.gov/tiles/Mars/EQ/curiosity_ctx_mosaic/1.0.0/default/default028mm/{z}/{y}/{x}.png"
+max_zoom = 10
+
 # --- Thermal ---------------------------------------------------------------
 [products.thermal_inertia]
 id = "THEMIS_TI_Mosaic_Quant_30S120E_100mpp"
@@ -66,7 +102,7 @@ sand_ti_threshold = 300.0     # TI below this => flag as likely loose sand (regi
 # --- Radiation / space weather --------------------------------------------
 [spaceweather]
 rad_gcr_dose_mgy_per_day = 0.21       # Hassler et al. 2014, Gale surface, GCR only (+/- 0.04)
-rad_dose_equivalent_msv_per_day = 0.67
+rad_dose_equivalent_msv_per_day = 0.64    # Hassler et al. 2014 (+/- 0.12)
 donki_base_url = "https://api.nasa.gov/DONKI"
 donki_max_range_days = 60
 api_key_env = "NASA_API_KEY"          # falls back to DEMO_KEY (rate-limited)

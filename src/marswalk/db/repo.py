@@ -13,9 +13,15 @@ from sqlalchemy.orm import Session
 from marswalk.config import SiteConfig
 from marswalk.db.models import Observation, Plan, Site, Stop
 
+USER_KIND = "user"   # stops added on the map (the others, "start" and "stop", are seeded from the site config)
+
 
 class NotFound(LookupError):
     pass
+
+
+class NotAllowed(PermissionError):
+    """The request is understood but the row may not be changed (e.g. a science stop from the site config)."""
 
 
 def _iso_utc(t: dt.datetime) -> str:
@@ -32,6 +38,7 @@ def seed_site(session: Session, site: SiteConfig) -> bool:
     Returns True when it seeded.
     """
     if session.get(Site, site.id) is not None:
+        _sync_config_stops(session, site)
         return False
     row = Site(id=site.id, name=site.name)
     pts = [site.start, *site.stops]
@@ -40,6 +47,25 @@ def seed_site(session: Session, site: SiteConfig) -> bool:
     session.add(row)
     session.commit()
     return True
+
+
+def _sync_config_stops(session: Session, site: SiteConfig) -> None:
+    """Config stops (start and science stops) cannot be edited in the app, so the config files stay their source of
+    truth: refresh their position and details when the files change (e.g. a stop moved onto the base-map frame)."""
+    rows = {r.code: r for r in session.scalars(select(Stop).where(Stop.site_id == site.id, Stop.kind != USER_KIND))}
+    changed = False
+    for s in (site.start, *site.stops):
+        r = rows.get(s.id)
+        if r is None:
+            continue
+        new = {"lat": s.lat, "lon": s.lon, "name": s.name, "dtm_z_m": s.dtm_z_m, "science": s.science,
+               "work_time_min": s.work_time_min}
+        for k, v in new.items():
+            if getattr(r, k) != v:
+                setattr(r, k, v)
+                changed = True
+    if changed:
+        session.commit()
 
 
 # --- sites & stops --------------------------------------------------------------------------------
@@ -58,6 +84,47 @@ def list_stops(session: Session, site_id: str) -> list[dict]:
 
 def stop_codes(session: Session, site_id: str) -> set[str]:
     return set(session.scalars(select(Stop.code).where(Stop.site_id == site_id)).all())
+
+
+def _user_stop(session: Session, site_id: str, code: str) -> Stop:
+    s = session.scalars(select(Stop).where(Stop.site_id == site_id, Stop.code == code)).first()
+    if s is None:
+        raise NotFound(f"stop {code!r}")
+    if s.kind != USER_KIND:
+        raise NotAllowed(f"{code} comes from the site's science plan and cannot be changed here")
+    return s
+
+
+def add_stop(session: Session, site_id: str, *, lat: float, lon: float, name: str = "", work_time_min: float = 0.0,
+             dtm_z_m: float | None = None) -> dict:
+    """Save a stop the crew added on the map. Codes run U1, U2, ...; it joins the end of the visiting order."""
+    rows = session.scalars(select(Stop).where(Stop.site_id == site_id)).all()
+    if not rows and session.get(Site, site_id) is None:
+        raise NotFound(f"site {site_id!r}")
+    n = 1 + max((int(r.code[1:]) for r in rows if r.kind == USER_KIND and r.code[1:].isdigit()), default=0)
+    s = Stop(site_id=site_id, code=f"U{n}", seq=1 + max((r.seq for r in rows), default=0), kind=USER_KIND,
+             name=name or f"My stop {n}", lat=lat, lon=lon, dtm_z_m=dtm_z_m, science="", work_time_min=work_time_min)
+    session.add(s)
+    session.commit()
+    return _stop_dict(s)
+
+
+def update_stop(session: Session, site_id: str, code: str, *, lat: float | None = None, lon: float | None = None,
+                name: str | None = None, work_time_min: float | None = None, dtm_z_m: float | None = None) -> dict:
+    s = _user_stop(session, site_id, code)
+    if lat is not None and lon is not None:
+        s.lat, s.lon, s.dtm_z_m = lat, lon, dtm_z_m
+    if name:
+        s.name = name
+    if work_time_min is not None:
+        s.work_time_min = work_time_min
+    session.commit()
+    return _stop_dict(s)
+
+
+def delete_stop(session: Session, site_id: str, code: str) -> None:
+    session.delete(_user_stop(session, site_id, code))
+    session.commit()
 
 
 # --- plans ----------------------------------------------------------------------------------------

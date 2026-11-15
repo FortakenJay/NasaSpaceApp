@@ -40,6 +40,12 @@ class SiteConfig:
     def dtm(self) -> dict:
         return self.products["dtm"]
 
+    @property
+    def merged_dem(self) -> dict | None:
+        """The wider USGS merged DEM, if the site uses one (`[products.merged_dem]` with enabled = true)."""
+        m = self.products.get("merged_dem")
+        return m if m and m.get("enabled", True) else None
+
 
 @dataclass(frozen=True)
 class EVAConfig:
@@ -49,10 +55,32 @@ class EVAConfig:
     hazards: dict
     cost: dict = field(default_factory=dict)
     path: Path | None = None
+    comms: dict = field(default_factory=dict)
+    consumables: dict = field(default_factory=dict)
 
     @property
     def cost_model(self) -> str:
         return self.cost.get("model", "metabolic")
+
+
+def load_dotenv(path: Path | None = None) -> list[str]:
+    """Read KEY=VALUE lines from the project's .env (git-ignored) into the environment. Variables that are
+    already set win. Returns the names it set. This is where NASA_API_KEY lives, so it is typed once."""
+    import os
+    p = path or PROJECT_ROOT / ".env"
+    if not p.exists():
+        return []
+    names = []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k, v = k.removeprefix("export ").strip(), v.strip().strip("'\"")
+        if k and v and k not in os.environ:
+            os.environ[k] = v
+            names.append(k)
+    return names
 
 
 def _resolve(path: str | Path) -> Path:
@@ -88,4 +116,5 @@ def load_eva(path: str | Path) -> EVAConfig:
     p = _resolve(path)
     raw = tomllib.loads(p.read_text(encoding="utf-8"))
     return EVAConfig(eva=raw["eva"], suit=raw.get("suit", {}), route=raw["route"],
-                     hazards=raw["hazards"], cost=raw.get("cost", {}), path=p)
+                     hazards=raw["hazards"], cost=raw.get("cost", {}), path=p, comms=raw.get("comms", {}),
+                     consumables=raw.get("consumables", {}))

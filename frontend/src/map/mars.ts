@@ -40,6 +40,6 @@ export function trekSource(urlTemplate: string, maxZoom: number): XYZ {
     projection: MARS_GEOGRAPHIC,
     tileGrid: trekTileGrid(maxZoom),
     wrapX: false,
-    attributions: 'HiRISE mosaic via NASA/JPL Mars Trek · DTM/ortho NASA/JPL/UArizona',
+    attributions: 'Imagery via NASA/JPL Mars Trek (HiRISE, CTX, THEMIS). Terrain: HiRISE DTM, NASA/JPL/UArizona',
   });
 }

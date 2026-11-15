@@ -1,7 +1,6 @@
 """Remote raster access through GDAL (rasterio): HiRISE PDS IMG, THEMIS ISIS3 cubes, HiRISE JP2.
 
-Implemented: GDAL settings, bbox -> pixel window (pure, tested), and plain file download.
-TODO(M1): read_bbox() and write_geotiff() (specs below).
+Implemented: GDAL settings, bbox -> pixel window, windowed remote reads, GeoTIFF cache, file download.
 
 Verified 2026-11-13 with rasterio 1.5 / GDAL 3.12:
 - `/vsicurl/<url>` opens the DTM (PDS driver) and the TI mosaic (ISIS3 driver) directly; transforms
@@ -16,6 +15,9 @@ from __future__ import annotations
 import urllib.request
 from pathlib import Path
 
+import numpy as np
+import rasterio
+from pyproj import CRS
 from rasterio.windows import Window
 
 from marswalk.geo import GeoGrid, Raster
@@ -47,21 +49,51 @@ def bbox_window(grid: GeoGrid, bbox: dict, pad_px: int = 0) -> Window:
     return Window(c0, r0, c1 - c0, r1 - r0)
 
 
-def read_bbox(url: str, bbox: dict, band: int = 1, pad_px: int = 0) -> Raster:
-    """TODO(M1): read the bbox window of a remote product as a float32 Raster (NaN = nodata).
+def _source(url_or_path: str | Path) -> str:
+    """A local file is opened directly; anything else goes through /vsicurl/."""
+    return str(url_or_path) if Path(str(url_or_path)).exists() else vsicurl(str(url_or_path))
 
-        with rasterio.Env(**GDAL_ENV), rasterio.open(vsicurl(url)) as ds:
-            grid = GeoGrid.from_dataset(ds)
-            win = bbox_window(grid, bbox, pad_px)
-            a = ds.read(band, window=win, masked=True).astype("float32").filled(np.nan)
-            return Raster(a, GeoGrid.from_dataset(ds, win))
+
+def _to_float(a) -> np.ndarray:
+    out = np.ma.filled(a.astype("float32"), np.nan)
+    out[~np.isfinite(out) | (out < -1e30)] = np.nan   # PDS/ISIS "missing" constants that carry no nodata tag
+    return np.ascontiguousarray(out)
+
+
+def read_bbox(url: str | Path, bbox: dict, band: int = 1, pad_px: int = 0, crs: str | None = None,
+              env: dict | None = None) -> Raster:
+    """Read the bbox window of a remote (or local) product as a float32 Raster (NaN = nodata).
+
+    `crs` replaces the CRS GDAL reports (the affine transform still comes from the file). Use it when a file's
+    own Mars CRS is spelled in a way pyproj does not understand. `env` adds GDAL options for this read.
     """
-    raise NotImplementedError("M1: windowed remote read via GDAL (see docstring)")
+    with rasterio.Env(**{**GDAL_ENV, **(env or {})}), rasterio.open(_source(url)) as ds:
+        # With an override, never ask GDAL/pyproj to parse the file's own (possibly exotic) Mars CRS.
+        grid = (GeoGrid(ds.transform, CRS.from_user_input(crs), ds.height, ds.width) if crs
+                else GeoGrid.from_dataset(ds))
+        win = bbox_window(grid, bbox, pad_px)
+        a = ds.read(band, window=win, masked=True)
+        return Raster(_to_float(a), grid.window(win.row_off, win.col_off, int(win.height), int(win.width)))
+
+
+def read_geotiff(path: Path, band: int = 1) -> Raster:
+    """Read a whole cached GeoTIFF written by write_geotiff()."""
+    with rasterio.open(path) as ds:
+        return Raster(_to_float(ds.read(band, masked=True)), GeoGrid.from_dataset(ds), name=Path(path).stem)
 
 
 def write_geotiff(raster: Raster, path: Path) -> Path:
-    """TODO(M1): write a tiled, DEFLATE-compressed GeoTIFF with raster.grid's transform and CRS (nodata NaN)."""
-    raise NotImplementedError("M1: local GeoTIFF cache")
+    """Write a tiled, DEFLATE-compressed float32 GeoTIFF with raster.grid's transform and CRS (nodata NaN)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    h, w = raster.shape
+    tmp = path.with_suffix(".part.tif")
+    with rasterio.open(tmp, "w", driver="GTiff", height=h, width=w, count=1, dtype="float32",
+                       crs=raster.grid.crs.to_wkt(), transform=raster.grid.transform, nodata=float("nan"),
+                       tiled=True, blockxsize=256, blockysize=256, compress="deflate") as ds:
+        ds.write(raster.data.astype("float32"), 1)
+    tmp.replace(path)
+    return path
 
 
 def download(url: str, dest: Path, timeout: float = 900) -> Path:

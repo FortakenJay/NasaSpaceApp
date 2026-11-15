@@ -1,29 +1,24 @@
-interface Props {
-  names: string[];
-  visibility: Record<string, boolean>;
-  onToggle: (name: string, visible: boolean) => void;
-  overlaysPending: boolean;
+export interface MapView {
+  key: string;
+  label: string;
 }
 
-export function LayerToggles({ names, visibility, onToggle, overlaysPending }: Props) {
+interface Props {
+  views: MapView[];
+  value: string;
+  onChange: (key: string) => void;
+}
+
+/** "Show on the map" switch floating over the map: the photo, or one terrain layer at a time. */
+export function LayerToggles({ views, value, onChange }: Props) {
   return (
-    <section>
-      <h2>Layers</h2>
-      <div className="layers">
-        {names.map((name) => (
-          <label key={name}>
-            <input
-              type="checkbox"
-              checked={visibility[name] ?? true}
-              onChange={(e) => onToggle(name, e.target.checked)}
-            />
-            {name}
-          </label>
-        ))}
-      </div>
-      {overlaysPending && (
-        <p className="note">Slope, roughness, thermal inertia and no-go overlays arrive with milestone M2.</p>
-      )}
-    </section>
+    <div className="map-views" role="group" aria-label="What the map shows">
+      <span className="map-views-title">Show</span>
+      {views.map((v) => (
+        <button key={v.key} type="button" aria-pressed={v.key === value} onClick={() => onChange(v.key)}>
+          {v.label}
+        </button>
+      ))}
+    </div>
   );
 }
