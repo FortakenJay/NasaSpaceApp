@@ -49,6 +49,30 @@ def redact(text: str) -> str:
     return _KEY_RE.sub(r"\1***", text)
 
 
+def plain_error(error: str) -> str:
+    """A raw transport error ("python: timed out; curl: (28) ...") as one sentence a user can act on."""
+    e = (error or "").lower()
+    if not e:
+        return ""
+    if "waiting" in e and "before asking again" in e:
+        return "It failed a moment ago, so MarsWalk is waiting before asking again."
+    if "requests left" in e:
+        return "Few NASA requests are left this hour, so MarsWalk is reusing its saved copy."
+    if "429" in e or "rate limit" in e or "too many requests" in e:
+        return "NASA's request limit for this key was reached. A personal key in .env raises it."
+    if "timed out" in e or "timeout" in e:
+        return "NASA's server did not answer in time. It is often slow; MarsWalk keeps trying in the background."
+    if any(k in e for k in ("name or service", "nodename", "resolve", "unreachable", "no route", "refused")):
+        return "This computer could not reach NASA's server. Check the internet connection."
+    if "403" in e or "401" in e:
+        return "NASA refused the request. Check NASA_API_KEY in .env."
+    if any(k in e for k in ("500", "502", "503", "504")):
+        return "NASA's server had an error. MarsWalk will ask again later."
+    if "expecting value" in e or "json" in e:
+        return "NASA's server sent an answer MarsWalk could not read."
+    return "NASA's server did not give a usable answer."
+
+
 # ---------------------------------------------------------------- transport
 def _connect_ipv4(address, timeout=None, source_address=None):
     """socket.create_connection, but IPv4 only. Python tries IPv6 first and, unlike a browser, waits out the
@@ -276,7 +300,7 @@ class ApiClient:
     def snapshot(self) -> dict:
         now = time.time()
         with self._guard:
-            feeds = [{"name": f["name"], "state": f["state"], "error": f["error"],
+            feeds = [{"name": f["name"], "state": f["state"], "error": f["error"], "problem": plain_error(f["error"]),
                       "age_s": None if f["fetched_at"] is None else round(now - f["fetched_at"]),
                       "fresh_for_s": None if f["fetched_at"] is None else max(round(f["ttl_s"] - (now - f["fetched_at"])), 0),
                       "retry_in_s": None if not f["retry_at"] or f["retry_at"] < now else round(f["retry_at"] - now)}

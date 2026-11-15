@@ -1,145 +1,153 @@
-# MarsWalk Traverse Planner
+# MarsWalk
 
-A route planner for astronauts walking on Mars in spacesuits. It plans a safe EVA from a parked
-pressurized rover through science stops and back, using NASA data: HiRISE 1 m topography and
-imagery, terrain roughness (as a rock-hazard proxy), THEMIS thermal inertia, and space weather (MSL RAD + DONKI).
+**Plan a walk on Mars that always leaves enough oxygen to get home.**
 
-**Baseline site:** Gale crater / Mount Sharp boxwork, at five stops from Curiosity's 2025 campaign
-(Altadena, first ridge stop, Monte Grande hollow + Nevado Sajama ridge, final-phase hollow, upper contact).
+![MarsWalk planning a five-stop walk across the boxwork ridges of Mount Sharp, on real HiRISE imagery](docs/img/02-planned-photo.png)
 
-> Status: **v0.8 (2026-11-14).** Runs end to end on the real Gale data: fetch, layers, least-cost routing with two
-> cost models, EVA plan with timeline and walk-back margins, the walk-back safe zone, stops added on the map and
-> saved in the database, and the space-weather go/no-go (NASA DONKI: CME arrivals predicted at Mars, particle
-> events, flares, plus the RAD dose). 63 Python tests.
->
-> **v0.8 terrain:** the whole map now has terrain. The USGS merged 1 m Gale DEM (Parker & Calef) is the base surface
-> over the rover +- 3 km; routes are still only planned where the HiRISE 1 m stereo DTM exists (the rest is drawn faded,
-> grey on the off-limits view). Fixing this exposed a **45 m georeferencing offset**: the HiRISE DTM's own coordinates
-> sit 33.5 m south and 30.5 m east of the USGS/MSL base map that the Mars Trek photo, the merged DEM and Curiosity's
-> waypoints share. The DTM is now moved onto that frame (`basemap_offset_m`, re-measured at every build), so the
-> overlays line up with the photo and the stops sit on the terrain they name. On the registered DTM, S2 reads
-> 10.5 deg (5 m slope) and 0.28 m roughness, and the baseline plan is 1.72 km / 3.52 h with every stop reachable.
-> Run `marswalk fetch` once more after pulling this version (about 0.5 GB, one time). Open: the 3-D planning table (M6).
-> See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the shared [design doc](https://claude.ai/artifact/XrEKBZR1x5SKkNh2LXSJqc).
->
-> **Moved or copied the project folder?** Re-run `python -m pip install -e ".[dev]"` in the new folder. Otherwise the
-> commands keep running the code (and looking for the data) in the old folder. The CLI and the app both warn about this.
+---
 
-## Stack
-| Layer | Tech |
+## The walk home is the whole problem
+
+Picture the first crew to step out at Gale crater. The rover is parked at the foot of Mount Sharp. Ahead, a maze
+of boxwork ridges that Curiosity spent 2025 driving through: veins of rock left standing where the ground around
+them eroded away. Five places worth a geologist's afternoon. Each suit carries eight hours of oxygen.
+
+The obvious question is *how do we get there?* The real one is quieter: **from any point on this walk, can we still
+make it back?**
+
+On Earth, a hiker who misjudges a trail is tired. On Mars, a crew member who misjudges the walk back is out of air.
+So MarsWalk doesn't just draw a route. It keeps asking, for every metre of the walk and every minute of the day,
+whether the crew can still turn around and reach the rover with the reserve untouched. Then it shows the answer on
+the map, says it out loud, and puts it on the crew member's sleeve.
+
+This is our entry to the **NASA Space Apps Challenge 2026** (*Marswalk* mapping challenge), by Jih Bin Luo Liu and
+Justin Meng.
+
+## What it does, in one walk
+
+**1. It reads the ground the way a boot would.** From NASA's 1-metre HiRISE stereo terrain it measures slope at the
+scale of one stride and of a few strides, roughness (rocks and ledges), and loose sand (from THEMIS thermal inertia).
+Anything too steep or too rough is off-limits: 28 % of the HiRISE window around the rover.
+
+![Off-limits ground in red: too steep or too rough](docs/img/04-off-limits.png)
+
+**2. It finds the cheapest walk, in oxygen, not metres.** The route search runs over every metre of the grid,
+pricing each step with the walking-energy model from NASA-funded traverse research (SEXTANT). It knows a 10° climb
+draws *less* power than flat ground, because you slow to a crawl, but costs **3.3 times more energy per metre**.
+So routes bend around hills the way a tired person would.
+
+**3. It plans the day.** For the five Curiosity waypoints, in science order:
+
+| | |
 |---|---|
-| Raster access | **rasterio / GDAL**: PDS IMG, ISIS3 cubes and JP2 read remotely via `/vsicurl/` windows; **pyproj** for Mars CRSs |
-| Analysis | numpy, scipy, scikit-image |
-| Route search | **numba**-compiled A* / Dijkstra with directional edge-cost kernels (`route/astar.py`) |
-| Database | **SQLite + SQLAlchemy 2**, reached only through `marswalk.db.repo` |
-| Backend | **FastAPI** + uvicorn: the only server layer; all data goes through `/api/*` routes |
-| Frontend | **React 19 + TypeScript + Vite**, **TanStack Query** on a central API client, **OpenLayers** with a Mars 2000 projection and Mars Trek tiles |
-| 3-D planning table | **CesiumJS** with a Mars ellipsoid and the DTM as terrain (M6, spec in `frontend/src/views/planningTable.ts`) |
+| Distance | **1.71 km**, there and back |
+| Time outside | **3 h 31 min**: 1 h 01 min walking, 2 h 30 min working at stops |
+| Effort | **2,962 kJ** per crew member, 35 % of the budget, about **0.21 kg of oxygen** breathed |
+| Tightest moment | still **2 h 05 min** to spare before the crew would have to start home |
+| Steepest step | 16°, under the 20° limit; no step on off-limits ground |
 
-## Data-access rules (enforced)
-1. **Components never fetch.** They use the hooks exported from `frontend/src/api` (`useSite`, `usePlans`,
-   `useObservations`, `useAddObservation`, …). Only `src/api/client.ts` calls `fetch`.
-2. **The API layer is the only path to data.** Every hook maps to one FastAPI route in `src/marswalk/api/app.py`.
-3. **Only the repository touches the database.** Routes call `marswalk.db.repo`; nothing else imports SQLAlchemy.
+**4. It shows where you can still go.** Slide the clock forward and the green *walk-back safe zone* shrinks: every
+place from which the crew could still walk home with the reserve intact. At 5 h 18 min it still reaches every stop,
+but only just: the map turns yellow and orange, because 18 minutes of usable oxygen are left and the walk home
+from the farthest stop takes 15. Seeing that happen before anyone steps outside is the point.
 
-Guards: ESLint (`no-restricted-globals` for `fetch`/`XMLHttpRequest`, `no-restricted-imports` for API internals)
-and `tests/test_architecture.py` both fail on a violation.
+![The walk-back safe zone 5 h 18 min into the walk](docs/img/06-safe-zone.png)
 
-## Quick start
-Requires Python ≥ 3.11 and Node ≥ 20.19.
+**5. It watches the Sun.** NASA's DONKI service predicts when solar eruptions (CMEs) will reach *Mars*, not just
+Earth, and reports particle storms. MarsWalk turns that into GO, CAUTION or NO-GO, and adds the radiation dose for
+the walk from Curiosity's own measurements on the ground at Gale: **0.031 mGy** for this walk.
+
+**6. You can just ask it.** Press the microphone and say *"How far is S3 from here?"* The answer comes back out
+loud, and the route it means is drawn in white: 610 m in a straight line, 730 m on foot, 28 minutes with the safety
+margin. It handles oxygen, radiation, energy, the walk home, turn-back times, slopes and the schedule. There is no
+AI model behind it and no network call, so every number it says is the planner's own.
+
+![Asking out loud](docs/img/07-ask-distance.png)
+
+**7. It goes on the suit.** A 7.5-inch e-ink panel shows the walk like car navigation: next stop and distance,
+oxygen left before the reserve, the walk home, and *turn back within*, which goes black when slack runs low. The
+planner draws it; an ESP32 downloads it once a minute (`firmware/suit_display`).
+
+![The suit display while working at S2](docs/img/eink-050.png)
+
+## The bug that moved the map 45 metres
+
+Late on the first night we checked our own work and found the uncomfortable kind of bug: the kind that looks fine.
+
+NASA's HiRISE terrain file carries its own coordinates. Those coordinates are **33.5 m south and 30.5 m east** of the
+USGS base map that the Mars Trek photos, the wider USGS terrain model and Curiosity's own waypoints all share. Every
+slope we had shown, every route, every value at every stop had been read 45 metres from where it was drawn. Nothing
+crashed. The map just quietly lied.
+
+We measured the shift two independent ways, and they agreed:
+
+| Compared | Match before | Match after shifting 33 m N, 30 m W |
+|---|---|---|
+| HiRISE terrain vs USGS terrain | 0.935 | **0.9998** |
+| HiRISE photo vs Mars Trek photo | 0.47 | **0.93** |
+
+MarsWalk now moves the terrain onto the base map and re-measures what is left every time it builds. The slope at
+the second stop went from 12.2° to 10.5°. Small numbers, but they are the difference between *the ground
+under the pin* and *the ground 45 metres away*.
+
+That night set the rule for the rest of the build: **every number gets checked by a second path.** `marswalk audit`
+recomputes 30 of them: distances along the route on the sphere, the timeline added up again, budgets from the
+config, the slope layer hand-computed at random points. All 30 pass on the real data. It caught three more problems
+on the way, all now fixed: an oxygen constant off by 3.5 %, terrain noise counted as walking distance, and a
+radiation figure that did not match its source. [The audit, in full →](docs/wiki/Audit.md)
+
+## The data
+
+All real, all public:
+
+- **HiRISE** 1 m stereo terrain and orthophoto (NASA Mars Reconnaissance Orbiter, University of Arizona)
+- **USGS merged 1 m Gale terrain model** (Parker & Calef) for the wider map
+- **THEMIS** thermal inertia (Mars Odyssey) for sand vs rock
+- **Mars Trek** HiRISE, CTX and THEMIS mosaics (NASA/JPL) for the basemap
+- **Curiosity RAD** surface radiation (Hassler et al. 2014, *Science*)
+- **NASA DONKI** space weather: CME arrivals at Mars, particle events, flares
+- **Curiosity waypoints** for the science stops
+- **SEXTANT** walking speed and energy models (Johnson et al. 2010)
+
+Details, resolutions and the facts we verified against each file: [Data sources](docs/wiki/Data-sources.md).
+Every formula, with its source: [Models and math](docs/wiki/Models-and-math.md).
+
+## Run it
 
 ```bash
-python -m venv .venv
-.venv/Scripts/python -m pip install -e ".[dev]"     # macOS/Linux: .venv/bin/python
-.venv/Scripts/python -m pytest
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+marswalk fetch            # one time: the terrain window around the rover (~0.6 GB)
+marswalk audit            # recompute every number (30 checks)
+marswalk serve            # API on :8000
+cd frontend && npm install && npm run dev     # the app on http://localhost:5173
 ```
 
-```bash
-.venv/Scripts/python -m marswalk serve              # API on http://127.0.0.1:8000
-```
+Optional: a free NASA API key in `.env` (`NASA_API_KEY=...`) raises the space-weather request limit. Stuck?
+[Running it](docs/wiki/Running.md) has a table of the usual errors.
 
-```bash
-npm --prefix frontend install
-npm --prefix frontend run dev                       # app on http://127.0.0.1:5173 (proxies /api)
-```
+## Inside
 
-```bash
-npm --prefix frontend run lint                      # ESLint incl. the API-boundary rules
-npm --prefix frontend run doctor                    # React Doctor
-```
+FastAPI and SQLite on the back; React, TypeScript and OpenLayers (on a true Mars map projection) on the front. The
+route search is a compiled A* over millions of 1 m cells. One reverse search from the rover gives the walk home from
+everywhere at once. Every limit lives in `configs/`, never in code. In the app only the API layer may call the
+network, and in the backend only the repository may touch the database; lint rules and tests fail if either rule is
+broken. 80 tests.
 
-The SQLite file is `data/marswalk.db` (git-ignored). `serve` creates it and seeds the site and stops from the config
-files on first start; delete it to reset.
+- [How it works](docs/wiki/How-it-works.md): the pipeline, end to end
+- [Decisions](docs/wiki/Decisions.md): what we chose over what, and why
+- [Knowledge graph](docs/wiki/Knowledge-graph.md): a map of the code (857 nodes), built with graphify
+- [API](docs/wiki/API.md) · [Voice questions](docs/wiki/Voice-questions.md) · [Suit display](docs/wiki/Suit-display.md)
 
-Without the API, the app falls back to `frontend/public/sample-site.json` (`marswalk export` regenerates it),
-so a static build (`npm --prefix frontend run build`) still shows the site and stops.
+## What we would do next
 
-Pipeline commands:
+- **Measure, don't assume, the suit.** Speed and energy come from Apollo-era and Earth data. A Mars suit's real
+  numbers would replace two lines of config.
+- **A 3-D planning table** so a crew can rehearse the walk from inside the habitat.
+- **Live position.** The suit display follows the plan's clock; with a position fix it would follow the walker.
 
-```bash
-.venv/Scripts/python -m marswalk info      # site, products, stops, distances, EVA limits
-.venv/Scripts/python -m marswalk fetch     # cache the DTM, thermal-inertia and ortho windows in data/raw/ (run once, ~1 min)
-.venv/Scripts/python -m marswalk layers    # slope, roughness, TI, no-go: prints values at the stops, writes overlay PNGs
-.venv/Scripts/python -m marswalk plan --cost metabolic|weighted --order fixed|optimize [--out out/plan.json]
-.venv/Scripts/python -m marswalk status    # space-weather GO / CAUTION / NO-GO from DONKI (set NASA_API_KEY; DEMO_KEY is rate-limited)
-```
+## How this was built
 
-After `fetch`, start `serve` and the app: **Plan route** draws the route with its profile, timeline and violations;
-the **Walk-back safe zone** slider shows where the crew can still walk home from at any elapsed EVA time.
-First check after fetching real data: `marswalk layers` should print about 12.6 deg (5 m slope) and 0.31 m roughness at S2.
-
-## Using the app
-The right-hand sheet is a four-step checklist; the map follows along.
-1. **Choose where to go.** One list of stops with tick boxes. "Add a stop on the map" saves a new stop where you
-   click (codes U1, U2, ...); added stops can be dragged, renamed and removed, and they survive a reload.
-2. **Plan the walk.** One button. "Options" holds the cost model and the stop order.
-3. **Check the plan.** A verdict against the EVA limits, four numbers (distance, time outside, energy, spare time),
-   the height profile, and a stop-by-stop timeline with the latest "leave by" time for each stop.
-4. **Check the walk home.** Drag the time slider or press "Play the last hour" to watch the safe zone shrink; the
-   sheet names the stops the crew could no longer get home from.
-
-"Show" on the map switches between the photo and one terrain layer at a time (relief, slope, roughness, sand or rock,
-off limits). The space-weather line at the top opens for details.
-
-## NASA web APIs: one client, few requests
-Every request to an external API goes through `src/marswalk/sources/api_client.py`. It caches each feed for 30 minutes
-(memory and `data/cache/api/`), reuses the last good copy when NASA does not answer, lets slow feeds finish in the
-background, backs off after failures, tracks the hourly request budget, and never writes the key to disk or logs.
-The app shows all of it under **NASA data connections**; `GET /api/sources` is the same information as JSON.
-
-Put your key in `.env` (git-ignored; see `.env.example`): `NASA_API_KEY=...`. Without it the shared `DEMO_KEY` is used.
-
-## Walk-back safe zone
-One reverse Dijkstra from the rover gives the cost, time and energy of walking home from every cell. A cell is
-inside the safe zone at elapsed time t when (walk-back time x margin factor) fits in what is left of the usable
-budget (capacity less the 30% reserve). This is the Apollo walk-back limit, recomputed for any t and shaped by the
-terrain instead of drawn as a circle. `GET /api/walkback?lat=&lon=&elapsed_h=` answers the same question for one point.
-
-## Layout
-```
-configs/sites/gale_boxwork.toml   products, URLs, grid, bbox (one file per site)
-configs/eva/artemis_default.toml  EVA limits, hazard limits, cost-model parameters
-data/sites/gale_boxwork/stops.json  H1 + S1–S5 (committed)
-src/marswalk/                     config, geo, sources, layers, cost, route, constraints, spaceweather, export, db, api, cli
-src/marswalk/db/                  SQLAlchemy models, engine, repo (the only DB access)
-frontend/src/api/                 central API layer: client (fetch), endpoints, TanStack Query hooks, types
-frontend/src/components/          React panels (plan, stops, field log, layers, space weather)
-frontend/src/map/                 MarsMap (OpenLayers in React), Mars projection + Trek tiles
-docs/ARCHITECTURE.md              design, API, data contracts, milestones
-tests/                            pytest (geo, config, pure logic, API + DB, architecture boundaries)
-```
-
-## Defaults (editable)
-- **EVA:** 8 h max, 2 crew, ≥30% walkback reserve, ≤2 km from rover, 30 min per stop, ×1.3 time margin.
-- **No-go:** 5 m slope > 25°, 1 m slope > 35°, roughness > 0.8 m.
-- **Cost model:** `metabolic` (SEXTANT-style, Mars gravity) or `weighted` (hazard score), switchable in the app and the CLI.
-  Walking physics are in `cost/physics.py`; **check its coefficients against the SEXTANT thesis before citing them.**
-- **Edge limit:** no step steeper than 20 deg (`cost.metabolic.max_grade_deg`); grades come from a stride-scale smoothed DTM.
-- **Stop order:** fixed science order. `optimize` tries all orders.
-
-## Data sources
-- HiRISE DTM `DTEEC_019698_1750_019988_1750_U01` and orthoimages: [HiRISE PDS](https://hirise-pds.lpl.arizona.edu/PDS/DTM/ESP/ORB_019600_019699/ESP_019698_1750_ESP_019988_1750/)
-- Basemap: [NASA/JPL Mars Trek](https://trek.nasa.gov/mars/) `curiosity_hirise_mosaic` WMTS
-- THEMIS quantitative thermal inertia mosaic: [USGS Astrogeology](https://astrogeology.usgs.gov/search/map/themis_thermal_inertia_mosaic_quantitative_30s120e_100mpp)
-- Curiosity waypoints: [MSL waypoints](https://mars.nasa.gov/mmgis-maps/MSL/Layers/json/MSL_waypoints.json)
-- Radiation: Hassler et al. 2014 (RAD surface dose); space weather: [NASA DONKI](https://api.nasa.gov/)
+Built during the Space Apps weekend by a two-person team. We used AI coding assistance (Claude) to help write code,
+tests and documentation; the design, the data choices and the checking were ours, and every number in this README
+comes from the code run on NASA's data. NASA does not endorse this project.

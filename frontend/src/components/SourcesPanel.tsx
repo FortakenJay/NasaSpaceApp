@@ -44,7 +44,11 @@ export function SourcesPanel({ live }: { live: boolean }) {
                 <b>{f.label}</b>
                 {f.required ? '' : ' (optional)'}
                 <small>{feedLine(f)}</small>
-                {f.error && <small className="why">{f.error}</small>}
+                {f.error && (
+                  <small className="why" title={f.error}>
+                    {f.problem || f.error}
+                  </small>
+                )}
               </li>
             ))}
           </ul>

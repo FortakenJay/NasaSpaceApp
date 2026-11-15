@@ -162,6 +162,28 @@ export interface SpaceWeatherStatus {
   notes: string[];
 }
 
+/** POST /api/ask: a question in plain words, answered from the plan on screen. */
+export interface AskRequest {
+  question: string;
+  plan_id?: string | null;
+  /** "Here" is this stop when one is selected on the map... */
+  selected_stop_id?: string | null;
+  /** ...otherwise the planned position this many hours into the walk (0 = the rover). */
+  elapsed_h?: number;
+}
+
+export interface AskAnswer {
+  question: string;
+  answer: string;
+  /** The same answer with units spelled out, for text-to-speech. */
+  speech: string;
+  topics: string[];
+  /** What "here" meant, and whether this answer used it. */
+  here: { label: string; lat: number; lon: number; used: boolean };
+  /** Route and points the answer is about, to draw on the map. */
+  highlight: GeoJSON.FeatureCollection | null;
+}
+
 export interface SourceFeed {
   name: string;
   label: string;
@@ -169,6 +191,8 @@ export interface SourceFeed {
   /** fresh = just asked; cached = reused within 30 min; stale = old copy because NASA did not answer; missing = nothing yet. */
   state: 'fresh' | 'cached' | 'stale' | 'missing';
   error: string;
+  /** The error as one plain sentence. */
+  problem?: string;
   age_s: number | null;
   fresh_for_s: number | null;
   retry_in_s: number | null;

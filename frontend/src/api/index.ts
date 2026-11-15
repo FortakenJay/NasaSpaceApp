@@ -5,6 +5,7 @@ export {
   createQueryClient,
   useAddObservation,
   useAddStop,
+  useAsk,
   useComputePlan,
   useDeleteStop,
   useLayers,
@@ -17,4 +18,5 @@ export {
   useSpaceWeather,
   useUpdateStop,
 } from './queries';
+export { einkUrl } from './endpoints';
 export type * from './types';

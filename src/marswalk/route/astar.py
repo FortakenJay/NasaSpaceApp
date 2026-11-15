@@ -188,12 +188,14 @@ def _one_leg(stack, model, start, goal, window):
         u = int(prev[u])
     idx = np.array(idx[::-1])
     rows, cols = idx // w, idx % w
-    z = stack.elevation_m[rows + r0, cols + c0].astype(np.float64)
+    # Distance, climb and grade come from the stride-scale walking surface, like the edge costs in the search:
+    # the raw 1 m stereo DTM has ~0.2 m of cell-to-cell noise, which would add length and phantom climbing.
+    walk = stack.walk_elev_m if stack.walk_elev_m is not None else stack.elevation_m
+    z = walk[rows + r0, cols + c0].astype(np.float64)
     run = np.hypot(np.diff(rows), np.diff(cols)) * px
     dz = np.diff(z)
     seg = np.hypot(run, dz)
-    walk = stack.walk_elev_m if stack.walk_elev_m is not None else stack.elevation_m
-    grade = np.degrees(np.arctan2(np.abs(np.diff(walk[rows + r0, cols + c0].astype(np.float64))), run)) if run.size else np.zeros(1)
+    grade = np.degrees(np.arctan2(np.abs(dz), run)) if run.size else np.zeros(1)
     return Path(cells=[(int(a + r0), int(b + c0)) for a, b in zip(rows, cols)],
                 cost=float(g[gi]), distance_m=float(seg.sum()), time_s=float(tt[gi]), energy_kj=float(ee[gi]),
                 climb_m=float(dz[dz > 0].sum()), descent_m=float(-dz[dz < 0].sum()), max_grade_deg=float(grade.max()),

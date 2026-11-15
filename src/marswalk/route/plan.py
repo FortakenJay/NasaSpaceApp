@@ -26,7 +26,12 @@ from marswalk.route.astar import Field, Path, astar, cost_field, snap
 from marswalk.route.sequence import order_stops
 
 DEFAULT_WORK_POWER_W = 250.0     # suited work at a stop (placeholder; override with suit.work_power_w)
-KJ_PER_KG_O2 = 20.9 / 1.429e-3   # ~20.9 kJ per litre O2 at 1.429 g/L  ->  ~14 600 kJ per kg
+# Oxygen burned per unit of metabolic energy: 4.825 kcal (20.19 kJ) per litre of O2 at a respiratory quotient of 0.82
+# (mixed diet; the classic Lusk/Weir table), and 1.429 g per litre of O2 at 0 deg C, 1 atm. -> ~14 130 kJ per kg O2.
+# (Before 2026-11-15 this used 20.9 kJ/L, which understated oxygen use by 3.5 %.)
+KJ_PER_L_O2 = 4.825 * 4.184
+KG_PER_L_O2 = 1.429e-3
+KJ_PER_KG_O2 = KJ_PER_L_O2 / KG_PER_L_O2
 
 
 class PlanError(ValueError):

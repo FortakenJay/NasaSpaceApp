@@ -154,6 +154,28 @@ def _run_status(site, eva, args):
         print(f"  feed {f['name']:6s} {f['state']:8s} {f['error']}")
 
 
+def _run_audit(site, eva, args):
+    from marswalk import audit
+    from marswalk.layers.stack import build_stack
+    try:
+        st = build_stack(site, eva)
+    except FileNotFoundError as e:
+        print(f"{e}\nChecking the constants only.")
+        st = None
+    checks = audit.run(site, eva, st, cost=args.cost)
+    width = max(len(c.name) for c in checks)
+    for c in checks:
+        print(f"  {'ok  ' if c.ok else 'FAIL'} {c.name:<{width}}  expected {c.expected!s:>12}  got {c.got!s:>12}")
+    bad = [c for c in checks if not c.ok]
+    print(f"{len(checks) - len(bad)} of {len(checks)} checks pass.")
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(audit.markdown(checks), encoding="utf-8")
+        print(f"wrote {args.out}")
+    if bad:
+        raise SystemExit(1)
+
+
 def _stub(milestone: str, fn):
     """Run a pipeline stage; report unimplemented milestones instead of crashing."""
     def run(args) -> int:
@@ -192,6 +214,10 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--order", choices=["fixed", "optimize"], help="override eva.route.stop_order")
     pl.set_defaults(func=_stub("M4", _run_plan))
     sub.add_parser("status", help="[M5] space-weather go/no-go").set_defaults(func=_stub("M5", _run_status))
+    au = sub.add_parser("audit", help="recompute every number the app shows and compare")
+    au.add_argument("--out", help="also write the results as markdown (e.g. docs/wiki/Audit-results.md)")
+    au.add_argument("--cost", choices=["metabolic", "weighted"], help="cost model of the plan to check")
+    au.set_defaults(func=_stub("audit", _run_audit))
     return p
 
 

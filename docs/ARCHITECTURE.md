@@ -5,6 +5,20 @@ fetch, layers, numba cost kernels, least-cost search, plan assembly, walk-back s
 them. It has **not been run on the real Gale data yet** (the build sandbox cannot reach the NASA hosts): run
 `marswalk fetch` and compare `marswalk layers` with the M2 reference values below. Open: M5 space weather, M6 3-D table.
 
+### Added in v0.9 (voice, suit display, audit)
+- **`ask.py` + `POST /api/ask`:** keyword parser (topics + places, speech-to-text spellings) answering from the stored
+  plan, the stack, the walk-home field and the space-weather status. Returns text, speech text, topics, "here",
+  and GeoJSON highlights. Frontend: `voice.ts` (browser speech in and out), `AskPanel` on the map.
+- **`eink.py` + `GET /api/eink.png|.bin`:** 800 x 480 1-bit navigation screen at any moment of a plan; `.bin` is
+  48 000 bytes, MSB first, 1 = black. `SuitDisplayPanel` (step 5) previews and plays it; `firmware/suit_display` is
+  the ESP32 + Waveshare 7.5" V2 sketch. Fonts: Barlow TTF in `eink_fonts/` (SIL OFL 1.1).
+- **`audit.py` + `marswalk audit`:** 30 independent recomputations (constants vs sources, walking model, terrain,
+  plan arithmetic, safety, radiation); `docs/wiki/Audit-results.md`. Fixes it drove: O2 energy equivalent 20.9 ->
+  20.19 kJ/L; route distance/climb on the walking surface instead of the noisy 1 m DTM; RAD dose equivalent 0.67 ->
+  0.64 mSv/day.
+- `api_client.plain_error()` turns transport errors into one sentence; the optional flare feed gets 30 s.
+- Docs: `docs/wiki/` (wiki pages), `docs/img/` (screenshots and suit-display frames), `docs/graph/` (graphify).
+
 ### Added in v0.8 (terrain over the whole map, and on the right spot)
 - **Merged DEM base:** `[products.merged_dem]` = USGS `MSL_Gale_DEM_Mosaic_1m_v3` (GeoTIFF on S3, LZW, one row per
   strip, so a window read pulls whole 33 km rows: ~0.5 GB for the rover +- 3 km window). `fetch` writes

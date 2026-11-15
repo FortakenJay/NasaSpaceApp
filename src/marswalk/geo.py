@@ -62,6 +62,14 @@ class GeoGrid:
         lon, lat = self._inv.transform(x, y)
         return lat, lon
 
+    def latlon_to_rc_many(self, lats, lons) -> tuple[np.ndarray, np.ndarray]:
+        """Vectorised latlon_to_rc (floor of the fractional pixel). Returns (rows, cols) as int arrays."""
+        xs, ys = self._fwd.transform(np.asarray(lons, dtype=np.float64), np.asarray(lats, dtype=np.float64))
+        inv = ~self.transform
+        cols = inv.a * np.asarray(xs) + inv.b * np.asarray(ys) + inv.c
+        rows = inv.d * np.asarray(xs) + inv.e * np.asarray(ys) + inv.f
+        return np.floor(rows).astype(np.int64), np.floor(cols).astype(np.int64)
+
     def rc_to_latlon_many(self, rows, cols) -> tuple[np.ndarray, np.ndarray]:
         """Vectorised rc_to_latlon (pixel centres). Returns (lats, lons)."""
         rows = np.asarray(rows, dtype=np.float64) + 0.5

@@ -97,7 +97,7 @@ sand_ti_threshold = 300.0     # TI below this => flag as likely loose sand (regi
 # --- Radiation / space weather --------------------------------------------
 [spaceweather]
 rad_gcr_dose_mgy_per_day = 0.21       # Hassler et al. 2014, Gale surface, GCR only (+/- 0.04)
-rad_dose_equivalent_msv_per_day = 0.67
+rad_dose_equivalent_msv_per_day = 0.64    # Hassler et al. 2014 (+/- 0.12)
 donki_base_url = "https://api.nasa.gov/DONKI"
 donki_max_range_days = 60
 api_key_env = "NASA_API_KEY"          # falls back to DEMO_KEY (rate-limited)

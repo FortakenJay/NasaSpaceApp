@@ -28,7 +28,7 @@ import datetime as dt
 import urllib.parse
 from dataclasses import asdict, dataclass, field, replace
 
-from marswalk.sources.api_client import ApiClient
+from marswalk.sources.api_client import ApiClient, plain_error
 
 CCMC_BASE = "https://kauai.ccmc.gsfc.nasa.gov/DONKI/WS/get"
 UTC = dt.timezone.utc
@@ -159,7 +159,7 @@ def go_no_go(sep_events: list[dict], now: dt.datetime, duration_h: float, baseli
 FEEDS = {
     "enlil": {"kind": "WSAEnlilSimulations", "days": 7, "required": True, "label": "Eruptions predicted to reach Mars"},
     "sep": {"kind": "SEP", "days": 7, "required": True, "label": "Particle storms"},
-    "flr": {"kind": "FLR", "days": 3, "required": False, "label": "Solar flares"},
+    "flr": {"kind": "FLR", "days": 3, "required": False, "label": "Solar flares", "timeout_s": 30.0},
 }
 FEED_TTL_S = 30 * 60        # how long an answer counts as current
 FEED_STALE_S = 6 * 3600     # how old a saved copy may be and still be used when NASA does not answer
@@ -173,7 +173,7 @@ def feed_requests(base_url: str, api_key: str, today: dt.date) -> dict[str, dict
         q = {"startDate": (today - dt.timedelta(days=f["days"])).isoformat(), "endDate": today.isoformat()}
         out[name] = {"urls": [f"{base_url.rstrip('/')}/{f['kind']}?{urllib.parse.urlencode({**q, 'api_key': api_key})}",
                               f"{CCMC_BASE}/{f['kind']}?{urllib.parse.urlencode(q)}"],
-                     "ttl_s": FEED_TTL_S, "timeout_s": FEED_TIMEOUT_S, "stale_s": FEED_STALE_S}
+                     "ttl_s": FEED_TTL_S, "timeout_s": f.get("timeout_s", FEED_TIMEOUT_S), "stale_s": FEED_STALE_S}
     return out
 
 
@@ -192,7 +192,9 @@ def current_status(spaceweather_cfg: dict, duration_h: float, api_key: str, now:
         r = got[name]
         if r.state == "missing":
             (missing_required if f["required"] else notes).append(
-                f["label"] if f["required"] else f"{f['label']}: no answer from NASA yet ({r.error}). This list is only an Earth-side hint.")
+                f["label"] if f["required"] else
+                f"{f['label']}: no answer yet. {plain_error(r.error)} Flares are seen from Earth, so this list is only a hint "
+                "for Mars and does not change the go/no-go.")
         elif r.state == "stale":
             at = dt.datetime.fromtimestamp(r.fetched_at, UTC).strftime("%H:%M UTC")
             notes.append(f"{f['label']}: NASA did not answer just now, using the copy saved at {at}.")

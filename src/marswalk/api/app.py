@@ -30,7 +30,7 @@ from collections.abc import Iterator
 from typing import Annotated, Literal
 
 import numpy as np
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
@@ -83,6 +83,13 @@ class SavePlanRequest(BaseModel):
     cost: CostName
     order: OrderName
     stop_ids: list[str] = Field(min_length=1)
+
+
+class AskIn(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+    plan_id: str | None = None                 # the plan on screen (POST /api/plan returns its id)
+    selected_stop_id: str | None = None        # "here", if a stop is selected on the map
+    elapsed_h: float = Field(default=0.0, ge=0, le=24)   # "here" along the plan otherwise (step 4 slider)
 
 
 class ObservationIn(BaseModel):
@@ -347,6 +354,67 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
     def refresh_sources():
         """Ask NASA again now, ignoring the cache and any back-off (the "Ask NASA again" button)."""
         return {"status": _status(force=True), "sources": _sources()}
+
+    @app.post("/api/ask")
+    def ask(body: AskIn, db: DB):
+        """A question in plain words ("how far is S3 from here?", "how much oxygen?"), answered from the plan on screen,
+        the terrain and the space-weather check. Returns the answer as text, as text for speech, and map highlights."""
+        from marswalk.ask import AskContext, answer
+        plan, cost = None, eva.cost_model
+        if body.plan_id:
+            try:
+                saved = repo.get_plan(db, body.plan_id)
+                plan, cost = saved.get("result"), saved.get("cost_model") or cost
+            except repo.NotFound:
+                plan = None
+
+        def stack():
+            try:
+                return terrain()
+            except HTTPException:
+                return None
+        ctx = AskContext(site=site, eva=eva, stops=repo.list_stops(db, site.id), plan=plan, cost=cost,
+                         selected_stop_id=body.selected_stop_id, elapsed_h=body.elapsed_h, stack=stack,
+                         walkback=lambda st: walkback(st, cost), status=_status)
+        return answer(body.question, ctx)
+
+    # --- suit display (e-ink) -----------------------------------------------------------------------
+    def _eink(plan_id: str | None, elapsed_h: float, db):
+        from marswalk import eink
+        if plan_id:
+            try:
+                saved = repo.get_plan(db, plan_id)
+            except repo.NotFound as e:
+                raise HTTPException(404, f"no plan {plan_id!r}") from e
+        else:
+            plans = [p for p in repo.list_plans(db, site.id, limit=5) if p.get("result")]
+            if not plans:
+                raise HTTPException(404, "No walk is planned yet. Plan one in the app (step 2) first.")
+            saved = plans[0]
+        cost = saved.get("cost_model") or eva.cost_model
+        try:
+            stack = terrain()
+        except HTTPException:
+            stack = None
+        try:
+            weather = _status()
+        except Exception:  # noqa: BLE001 - the screen still draws without it
+            weather = None
+        return eink.render(saved["result"], site, eva, elapsed_h * 60.0, stack, lambda st: walkback(st, cost), weather)
+
+    @app.get("/api/eink.png")
+    def eink_png(db: DB, elapsed_h: float = Query(0.0, ge=0, le=24), plan_id: str | None = None):
+        """The suit display (800 x 480, black and white) at `elapsed_h` into the plan (default: the latest plan)."""
+        from marswalk import eink
+        return Response(eink.to_png(_eink(plan_id, elapsed_h, db)), media_type="image/png",
+                        headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/eink.bin")
+    def eink_bin(db: DB, elapsed_h: float = Query(0.0, ge=0, le=24), plan_id: str | None = None):
+        """The same screen packed for an e-paper driver: 48 000 bytes, 1 bit per pixel, MSB first, 1 = black."""
+        from marswalk import eink
+        return Response(eink.to_bin(_eink(plan_id, elapsed_h, db)), media_type="application/octet-stream",
+                        headers={"Cache-Control": "no-store", "X-Width": str(eink.W), "X-Height": str(eink.H)})
 
     if warm:
         # Build the terrain stack and the walk-home field in the background, so the first click is not the slow one.

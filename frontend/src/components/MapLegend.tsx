@@ -9,6 +9,8 @@ interface Props {
   showStraight: boolean;
   /** One sentence about the terrain layer being shown, from the server. */
   note: string;
+  /** A route from an answered question is drawn. */
+  hasAnswer?: boolean;
 }
 
 const SCALES: Record<string, { title: string; className: string; from: string; to: string }> = {
@@ -18,7 +20,7 @@ const SCALES: Record<string, { title: string; className: string; from: string; t
 };
 
 /** Key for whatever is drawn on the map right now. */
-export function MapLegend({ mapView, safeZoneOn, hasRoute, hasAdded, walkLimitM, showStraight, note }: Props) {
+export function MapLegend({ mapView, safeZoneOn, hasRoute, hasAdded, walkLimitM, showStraight, note, hasAnswer }: Props) {
   const scale = SCALES[mapView];
   return (
     <details className="legend" open>
@@ -38,6 +40,11 @@ export function MapLegend({ mapView, safeZoneOn, hasRoute, hasAdded, walkLimitM,
         {hasRoute && (
           <li>
             <span className="swatch line" /> Planned route
+          </li>
+        )}
+        {hasAnswer && (
+          <li>
+            <span className="swatch line answer" /> Route in the answer (dashed: walk home)
           </li>
         )}
         {showStraight && (

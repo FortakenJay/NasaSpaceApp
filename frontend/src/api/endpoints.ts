@@ -1,6 +1,8 @@
 // One typed function per server route. Components never call these directly: they use the hooks in queries.ts.
 import { OfflineError, request, staticJson } from './client';
 import type {
+  AskAnswer,
+  AskRequest,
   LayerInfo,
   NewObservation,
   NewStop,
@@ -34,6 +36,10 @@ export const getStatus = () => request<SpaceWeatherStatus>('/api/status');
 export const getSources = () => request<SourcesInfo>('/api/sources');
 export const refreshSources = () =>
   request<{ status: SpaceWeatherStatus; sources: SourcesInfo }>('/api/sources/refresh', { method: 'POST' });
+/** The suit display (e-ink, 800 x 480) at a moment of a plan, as an image URL (an <img> loads it). */
+export const einkUrl = (planId: string, elapsedH: number) =>
+  `/api/eink.png?plan_id=${enc(planId)}&elapsed_h=${elapsedH.toFixed(3)}`;
+export const ask = (req: AskRequest) => request<AskAnswer>('/api/ask', { method: 'POST', json: req });
 export const computePlan = (req: PlanRequest) => request<PlanResult>('/api/plan', { method: 'POST', json: req });
 
 export const listPlans = () => request<SavedPlan[]>('/api/plans');

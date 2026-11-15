@@ -175,6 +175,7 @@ ul.feeds small.why { overflow-wrap: anywhere; }
 .swatch.dot-picked { background: var(--picked); }
 .swatch.line { height: 0; width: 18px; border-top: 3px solid var(--route); }
 .swatch.line.dashed { border-top-style: dashed; }
+.swatch.line.answer { border-top-color: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
 .swatch.line.dotted { border-top: 2px dotted rgba(255, 255, 255, 0.9); }
 .swatch.box-nogo { background: rgba(220, 40, 40, 0.75); }
 .swatch.box-safe { background: linear-gradient(90deg, #28b45a, #96c83c, #f0c828, #f0781e); width: 28px; }
@@ -186,9 +187,48 @@ ul.feeds small.why { overflow-wrap: anywhere; }
 .legend-note { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.25); font-size: 12.5px; }
 .scale-ends { display: flex; justify-content: space-between; font-size: 12px; opacity: 0.8; }
 
+/* Suit display: the e-ink picture at its real pixels, scaled to the sheet; larger on click. */
+.eink-frame { display: block; width: 100%; padding: 0; margin: 10px 0 4px; border: 2px solid var(--ink); border-radius: 4px;
+  background: #fff; cursor: zoom-in; }
+.eink-frame img, .eink-large img { display: block; width: 100%; height: auto; }
+.eink-frame img { aspect-ratio: 800 / 480; }
+.eink-large { position: fixed; inset: 0; z-index: 50; display: grid; place-content: center; gap: 10px; padding: 24px;
+  background: rgba(11, 13, 15, 0.86); cursor: zoom-out; }
+.eink-large img { width: min(1000px, 92vw); border: 10px solid #d9dbd6; border-radius: 10px; image-rendering: pixelated; }
+.eink-large p { margin: 0; text-align: center; color: var(--paper); font-size: 13px; }
+
+/* Ask: a comms strip on the map. The mic glows route-cyan while it listens; answers sit above it. */
+.ask { position: absolute; right: 12px; bottom: 30px; width: min(460px, calc(100% - 330px)); min-width: 300px;
+  display: grid; gap: 6px; color: var(--paper); }
+.ask-bar { display: flex; gap: 6px; padding: 6px; background: var(--chrome); border-radius: 10px; }
+.ask-bar input { flex: 1; min-width: 0; border: 0; border-radius: 6px; padding: 8px 10px; background: rgba(255, 255, 255, 0.1);
+  color: var(--paper); font-size: 15px; }
+.ask-bar input::placeholder { color: rgba(238, 240, 236, 0.55); }
+.ask-bar input:focus-visible, .ask-bar button:focus-visible { outline: 2px solid var(--route); outline-offset: 1px; }
+.ask-go { border: 0; padding: 0 14px; background: var(--paper); color: var(--ink); font-weight: 600; }
+.mic { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1.5px solid rgba(238, 240, 236, 0.6);
+  background: transparent; display: grid; place-items: center; padding: 0; }
+.mic svg { width: 20px; height: 20px; fill: none; stroke: var(--paper); stroke-width: 1.8; stroke-linecap: round; }
+.mic:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+.mic.listening { background: var(--route); border-color: var(--route); animation: mic-pulse 1.2s ease-out infinite; }
+.mic.listening svg { stroke: var(--ink); }
+@keyframes mic-pulse { from { box-shadow: 0 0 0 0 rgba(61, 214, 232, 0.6); } to { box-shadow: 0 0 0 12px rgba(61, 214, 232, 0); } }
+@media (prefers-reduced-motion: reduce) { .mic.listening { animation: none; } }
+.ask-answer { position: relative; padding: 11px 34px 10px 13px; background: var(--chrome); border-radius: 10px;
+  max-height: 42vh; overflow-y: auto; }
+.ask-q { margin: 0; font-size: 12.5px; opacity: 0.7; }
+.ask-a { margin: 4px 0 0; font-size: 15px; line-height: 1.45; }
+.ask-error { margin: 4px 0 0; font-size: 13.5px; color: #ffb4a8; }
+.ask-tools { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; font-size: 12px; opacity: 0.85; }
+.ask-tools .link { color: var(--paper); font-size: 12.5px; }
+.ask-close { position: absolute; top: 4px; right: 6px; border: 0; background: transparent; color: var(--paper);
+  font-size: 20px; line-height: 1; padding: 4px 6px; }
+.ask-here { margin: 0; padding: 0 4px; font-size: 12px; color: var(--paper); text-shadow: 0 1px 2px #000; opacity: 0.9; }
+
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; grid-template-rows: 58vh auto; height: auto; }
   .map-area { height: 58vh; }
   .sheet { border-left: 0; border-top: 1px solid var(--rule); }
   .legend { display: none; }
+  .ask { left: 10px; right: 10px; width: auto; min-width: 0; bottom: 10px; }
 }

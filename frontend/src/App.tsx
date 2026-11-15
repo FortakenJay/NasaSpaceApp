@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
+import { AskPanel } from './components/AskPanel';
+import { formatHours } from './format';
 import { describeError, useAddStop, useComputePlan, useDeleteStop, useLayers, usePlans, useSite, useUpdateStop } from './api';
 import type { CostModel, LayerInfo, StopOrder } from './api';
 import { MarsMap } from './map/MarsMap';
@@ -14,11 +16,12 @@ import { SpaceWeatherPanel } from './components/SpaceWeatherPanel';
 import { Step } from './components/Step';
 import { StopList } from './components/StopList';
 import { StopLog } from './components/StopLog';
+import { SuitDisplayPanel } from './components/SuitDisplayPanel';
 
 const NO_OVERLAYS: LayerInfo[] = [];
 const DEFAULT_USABLE_H = 5.6; // 8 h of oxygen less the 30% walk-home reserve, if the API does not say
 const PHOTO = 'photo';
-const EXPECTED_API = '0.8'; // major.minor this app was built against (src/marswalk/__init__.py)
+const EXPECTED_API = '0.9'; // major.minor this app was built against (src/marswalk/__init__.py)
 const VIEW_LABELS: Record<string, string> = {
   hillshade: 'Relief',
   slope5: 'Slope',
@@ -46,6 +49,7 @@ export function App() {
   const [mapView, setMapView] = useState(PHOTO);
   const [safeZoneOn, setSafeZoneOn] = useState(false);
   const [elapsedH, setElapsedH] = useState(0);
+  const [highlight, setHighlight] = useState<GeoJSON.FeatureCollection | null>(null);
 
   const result = compute.data ?? null;
   const route = result?.route ?? null;
@@ -85,6 +89,9 @@ export function App() {
   const visitIds = stops.filter((s) => s.kind !== 'start' && !skippedIds.includes(s.id)).map((s) => s.id);
   const addedCount = stops.filter((s) => s.kind === 'user').length;
   const hasTerrain = overlays.length > 0;
+  let hereHint = 'the rover';
+  if (selectedStop) hereHint = selectedStop.kind === 'start' ? 'the rover' : `${selectedStop.id}, ${selectedStop.name}`;
+  else if (result && elapsedH > 0) hereHint = `where the plan puts you ${formatHours(elapsedH)} into the walk`;
 
   const plan = (ids: string[]) => compute.mutate({ cost, order, stop_ids: ids });
   // Once a route is on the map it follows every change to the stops, so the two never disagree.
@@ -129,6 +136,7 @@ export function App() {
           skippedIds={skippedIds}
           selectedStopId={selectedStopId}
           route={route}
+          highlight={highlight}
           overlays={overlays}
           visibility={shown}
           walkLimitM={walkLimitM}
@@ -152,6 +160,15 @@ export function App() {
           walkLimitM={walkLimitM}
           showStraight={route === null && visitIds.length > 0}
           note={overlays.find((o) => o.key === mapView)?.note ?? ''}
+          hasAnswer={highlight !== null}
+        />
+        <AskPanel
+          live={live}
+          planId={result?.plan_id ?? null}
+          selectedStopId={selectedStopId}
+          elapsedH={elapsedH}
+          hereHint={hereHint}
+          onHighlight={setHighlight}
         />
       </div>
 
@@ -220,6 +237,16 @@ export function App() {
             timeline={result?.timeline ?? null}
             onElapsed={setElapsedH}
             onVisible={setSafeZoneOn}
+          />
+        </Step>
+
+        <Step n={5} title="Follow it on the suit">
+          <SuitDisplayPanel
+            live={live}
+            planId={result?.plan_id ?? null}
+            elapsedH={elapsedH}
+            endH={result ? (result.timeline[result.timeline.length - 1]?.arrive_min ?? 0) / 60 : null}
+            onElapsed={setElapsedH}
           />
         </Step>
 

@@ -126,3 +126,12 @@ def test_concurrent_callers_share_one_request(tmp_path):
 def test_real_transport_is_off_in_tests():
     with pytest.raises(OSError):
         api_client.http_get(URL)
+
+
+def test_plain_error_turns_transport_errors_into_sentences():
+    from marswalk.sources.api_client import plain_error
+    raw = "python: timed out; curl: curl: (28) Connection timed out after 12003 milliseconds"
+    assert plain_error(raw).startswith("NASA's server did not answer in time")
+    assert "request limit" in plain_error("HTTP Error 429: Too Many Requests")
+    assert "could not reach" in plain_error("python: <urlopen error [Errno 8] nodename nor servname provided>")
+    assert plain_error("") == ""

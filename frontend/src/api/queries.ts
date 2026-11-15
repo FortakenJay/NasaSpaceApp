@@ -2,7 +2,7 @@
 import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from './client';
 import * as api from './endpoints';
-import type { NewObservation, NewStop, PlanRequest, SavePlanRequest, StopPatch } from './types';
+import type { AskRequest, NewObservation, NewStop, PlanRequest, SavePlanRequest, StopPatch } from './types';
 
 export const queryKeys = {
   site: ['site'] as const,
@@ -55,6 +55,11 @@ export function useRefreshSources() {
       qc.setQueryData(queryKeys.sources, r.sources);
     },
   });
+}
+
+/** Ask the plan a question ("how far is S3 from here?"). Nothing is cached: each question is answered fresh. */
+export function useAsk() {
+  return useMutation({ mutationFn: (req: AskRequest) => api.ask(req) });
 }
 
 /** Computing a plan stores it server-side (M4: POST /api/plan persists the result as a saved plan),

@@ -14,10 +14,11 @@ import ImageLayer from 'ol/layer/Image';
 import VectorSource from 'ol/source/Vector';
 import ImageStatic from 'ol/source/ImageStatic';
 import GeoJSONFormat from 'ol/format/GeoJSON';
-import { boundingExtent } from 'ol/extent';
+import { boundingExtent, isEmpty } from 'ol/extent';
 import { ScaleLine, defaults as defaultControls } from 'ol/control';
 import { DoubleClickZoom, Translate } from 'ol/interaction';
 import { Circle, Fill, Stroke, Style, Text } from 'ol/style';
+import type { FeatureLike } from 'ol/Feature';
 import { unByKey } from 'ol/Observable';
 import type BaseLayer from 'ol/layer/Base';
 import type { LayerInfo, Site, Stop } from '../api';
@@ -44,6 +45,25 @@ function stopStyle(stop: Stop, selected: boolean, skipped: boolean): Style {
   });
 }
 
+/** What an answer is about: its route (white over a dark halo, dashed for the walk home) and its end points. */
+function highlightStyle(f: FeatureLike): Style[] {
+  const role = f.get('role') as string;
+  if (f.getGeometry()?.getType() === 'LineString') {
+    const dash = role === 'home' ? [10, 7] : undefined;
+    return [
+      new Style({ stroke: new Stroke({ color: 'rgba(0,0,0,0.65)', width: 7 }) }),
+      new Style({ stroke: new Stroke({ color: '#ffffff', width: 3.5, lineDash: dash }) }),
+    ];
+  }
+  return [new Style({
+    image: new Circle({ radius: 11, stroke: new Stroke({ color: '#ffffff', width: 3 }), fill: new Fill({ color: 'rgba(0,0,0,0.25)' }) }),
+    text: role === 'here' ? new Text({
+      text: 'here', offsetY: -20, font: '600 12px system-ui, sans-serif',
+      fill: new Fill({ color: '#fff' }), stroke: new Stroke({ color: '#000', width: 3 }),
+    }) : undefined,
+  })];
+}
+
 /** A circle of `radiusM` metres around (lat, lon), as lon/lat vertices. */
 function ring(lat: number, lon: number, radiusM: number): number[][] {
   const dLat = radiusM / METERS_PER_DEGREE;
@@ -61,6 +81,8 @@ interface Props {
   skippedIds: string[];
   selectedStopId: string | null;
   route: GeoJSON.FeatureCollection | null;
+  /** The route and points the last answered question is about. */
+  highlight: GeoJSON.FeatureCollection | null;
   overlays: LayerInfo[];
   visibility: Record<string, boolean>;
   /** Farthest the crew may go from the rover, drawn as a dashed ring. */
@@ -82,12 +104,13 @@ interface Handles {
   legSource: VectorSource;
   routeSource: VectorSource;
   limitSource: VectorSource;
+  answerSource: VectorSource;
   overlays: Map<string, { layer: ImageLayer<ImageStatic>; url: string }>;
   fitted: boolean;
 }
 
 export function MarsMap({
-  site, stops, skippedIds, selectedStopId, route, overlays, visibility, walkLimitM, adding, syncKey,
+  site, stops, skippedIds, selectedStopId, route, highlight, overlays, visibility, walkLimitM, adding, syncKey,
   onSelectStop, onAddStop, onMoveStop,
 }: Props) {
   const target = useRef<HTMLDivElement>(null);
@@ -113,6 +136,7 @@ export function MarsMap({
     const legSource = new VectorSource();
     const routeSource = new VectorSource();
     const limitSource = new VectorSource();
+    const answerSource = new VectorSource();
     const stopLayer = new VectorLayer({ source: stopSource, zIndex: 10 });
     const context = JSON.parse(contextKey) as { name: string; url_template: string; max_zoom: number }[];
     const layers = new Map<string, BaseLayer>([
@@ -129,6 +153,7 @@ export function MarsMap({
       ['Planned route', new VectorLayer({
         source: routeSource, zIndex: 6, style: new Style({ stroke: new Stroke({ color: COLORS.route, width: 3 }) }),
       })],
+      ['Answer', new VectorLayer({ source: answerSource, zIndex: 8, style: highlightStyle })],
       ['Stops', stopLayer],
     ]);
     const map = new OlMap({
@@ -167,7 +192,7 @@ export function MarsMap({
       // The view is in Mars geographic degrees, so the click coordinate is [lon, lat].
       if (!hitStop && actions.current.adding) actions.current.onAddStop(e.coordinate[1], e.coordinate[0]);
     });
-    handles.current = { map, layers, stopSource, legSource, routeSource, limitSource, overlays: new Map(), fitted: false };
+    handles.current = { map, layers, stopSource, legSource, routeSource, limitSource, answerSource, overlays: new Map(), fitted: false };
     if (import.meta.env.DEV) (window as unknown as { __marswalk?: unknown }).__marswalk = handles.current;
     return () => {
       unByKey(clickKey);
@@ -195,7 +220,7 @@ export function MarsMap({
     h.limitSource.clear();
     if (start && walkLimitM) h.limitSource.addFeature(new Feature(new LineString(ring(start.lat, start.lon, walkLimitM))));
     if (!h.fitted) {
-      h.map.getView().fit(boundingExtent(stops.map((s) => [s.lon, s.lat])), { padding: [70, 70, 70, 70] });
+      h.map.getView().fit(boundingExtent(stops.map((s) => [s.lon, s.lat])), { padding: [70, 70, 180, 70] });
       h.fitted = true;
     }
   }, [stops, skippedIds, walkLimitM, syncKey]);
@@ -224,6 +249,17 @@ export function MarsMap({
     h.routeSource.clear();
     if (route) h.routeSource.addFeatures(new GeoJSONFormat().readFeatures(route));
   }, [route]);
+
+  // What the last answer is about; the view moves to show all of it.
+  useEffect(() => {
+    const h = handles.current;
+    if (!h) return;
+    h.answerSource.clear();
+    if (!highlight) return;
+    h.answerSource.addFeatures(new GeoJSONFormat().readFeatures(highlight));
+    const extent = h.answerSource.getExtent();
+    if (extent && !isEmpty(extent)) h.map.getView().fit(extent, { padding: [90, 90, 200, 90], maxZoom: 18, duration: 400 });
+  }, [highlight]);
 
   // Raster overlays. Layers are kept between renders: only an overlay whose URL changed is reloaded, and the
   // old picture stays up until the new one has arrived (the safe zone changes URL on every slider step).
