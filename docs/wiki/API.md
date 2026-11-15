@@ -24,4 +24,6 @@ Interactive docs: http://127.0.0.1:8000/docs.
 | GET | `/api/sim/sun?start_utc=&hours=` | The Sun's azimuth and elevation through the walk, every 2 min (Mars24). Default start: the next `start_lmst_h` local time |
 
 Terrain routes answer **409** until `marswalk fetch` has run. `/api/ask` returns the answer as text, the same text
-for speech, the topics it understood, what "here" meant, and GeoJSON to highlight on the map.
+for speech, the topics it understood, what "here" meant, GeoJSON to highlight, and `go_to` (`{id, label}` or null)
+when the answer is a walking route to a stop. A route highlight has a `route` line (the way there) and, when the
+walk home from that stop exists, a `back` line. The walk-home answer uses `home` instead.

@@ -57,10 +57,13 @@ from the farthest stop takes 15. Seeing that happen before anyone steps outside 
 Earth, and reports particle storms. MarsWalk turns that into GO, CAUTION or NO-GO, and adds the radiation dose for
 the walk from Curiosity's own measurements on the ground at Gale: **0.031 mGy** for this walk.
 
-**6. You can just ask it.** Press the microphone and say *"How far is S3 from here?"* The answer comes back out
-loud, and the route it means is drawn in white: 610 m in a straight line, 730 m on foot, 28 minutes with the safety
-margin. It handles oxygen, radiation, energy, the walk home, turn-back times, slopes and the schedule. There is no
-AI model behind it and no network call, so every number it says is the planner's own.
+**6. You can just ask it, and then tell it to go.** Press the microphone and say *"How far is S3 from here?"* The
+answer comes back out loud: 610 m in a straight line, 730 m on foot, 28 minutes with the safety margin. The way out
+is drawn in cyan and the walk back to the rover in orange, so the two legs of the day are not the same line. Say
+*"Go to S3"* or *"Path to U1 from here"* and a **Go** button offers to make that place the next stop; the rest of the
+stops you already ticked stay on the walk, after it. It also handles oxygen, radiation, energy, the walk home,
+turn-back times, slopes and the schedule. There is no AI model behind it and no network call, so every number it
+says is the planner's own.
 
 ![Asking out loud](docs/img/07-ask-distance.png)
 
@@ -71,15 +74,24 @@ planner draws it; an ESP32 downloads it once a minute (`firmware/suit_display`).
 ![The suit display while working at S2](docs/img/eink-050.png)
 
 **8. You can walk it before you walk it.** Press **Simulation** and the plan becomes a place. You stand by the rover
-on Gale's real ground and walk the cyan line with W, A, S and D. Nothing in the game has physics of its own: under
-your boots it reads the planner's own 1 m grid, so every step is priced exactly as the route search prices it. A
-climb slows you, rough ground can more than double the time of each step, and a 21° slope stops you dead because the
-plan never routes over 20°. On 1,110 cells of the real 1 m grid the game and the planner agree to the last digit. The light is
-honest too: NASA's Mars24 algorithm puts the Sun where it will really be at 09:00 local time on the next sol (for
-the walk we tested, 37° up in the east-northeast, climbing to 74° by local noon), and the shadows fall accordingly.
-In the corner, the real suit display redraws itself from where you stand, once a mission minute, like the ESP32. Ask
-*"how far is the next stop?"* after finishing S1 and it answers from your boots: S2 is 420 m away in a straight
-line. Walk back to the rover, press E, and a debrief puts your walk next to the plan.
+on Gale's real ground and walk the line with W, A, S and D: cyan on the way out, orange on the way home. The walk
+itself has no physics of its own. Under your boots it reads the planner's own 1 m grid, so every step is priced
+exactly as the route search prices it. A climb slows you, rough ground can more than double the time of each step,
+and a 21° slope stops you dead because the plan never routes over 20°. On 1,110 cells of the real 1 m grid the game
+and the planner agree to the last digit. Ask *"go to S3"* from where you are standing and the line on the ground
+changes in front of you: cyan from your feet to S3, orange from S3 back to the rover. **Go** walks or rides that
+new line. Steer or brake to stop following it.
+
+The light is honest too: NASA's Mars24 algorithm puts the Sun where it will really be at 09:00 local time on the
+next sol (for the walk we tested, 37° up in the east-northeast, climbing to 74° by local noon), and the shadows fall
+accordingly. Gravity is Mars's own 3.71 m/s², 38 % of Earth's. A hop hangs in the air for 0.86 s. That same lightness
+is why a skateboard, an off-plan easter egg by the rover, feels harder to push than it would on Earth: the boot
+slips sooner because you weigh less, so each kick adds less speed. Uphill, the kick pushes a little past that grip
+so a slope does not stall the board. It does not change the plan, and oxygen keeps counting. In the corner, the real
+suit display redraws itself from where you stand, once a mission minute, like the ESP32. Ask *"how far is the next
+stop?"* after finishing S1 and it answers from your boots: S2 is 420 m away in a straight line. Walk back to the
+rover, press E, and a debrief puts your walk next to the plan. Controls live on the pause screen (Esc, or the
+Controls button), because a separate controls card sat on top of pause.
 
 ![Walking the plan after finishing S1: status, minimap, distances and the live suit display](docs/img/sim-walk.png)
 

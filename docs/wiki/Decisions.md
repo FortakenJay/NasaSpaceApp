@@ -39,6 +39,9 @@ What was chosen, what it was chosen over, and why.
 | Suit display | Server renders 800 × 480 1-bit; ESP32 only draws | Logic on the microcontroller | One source of truth; the board stays a dumb, reliable screen |
 | Display tech | E-ink | LCD | Readable in sunlight, no power between updates, handles cold |
 | App layout | Four (now five) numbered steps beside the map | A dashboard of panels | First-time users did not know where to start |
+| Route colours | Cyan on the way out, orange on the way back | One cyan line, or green for the return | The walk is two trips. Green is already the rover, so a green return line disappeared into the start marker |
+| "Go to S3" | The answer draws the path from here and the walk back, and Go makes that stop next (on the map) or replaces the line under your feet (in the simulator) | A distance sentence only | An astronaut asks where something is in order to go there. The route has to change when they say so |
+| Controls in the simulator | The key list lives on the pause screen. Controls and ? pause | A second card, centred like pause | The two cards occupied the same spot and covered each other |
 
 ## Verification
 
@@ -46,3 +49,16 @@ What was chosen, what it was chosen over, and why.
 |---|---|---|---|
 | Checking numbers | `marswalk audit`: independent recomputation, 30 checks | Unit tests alone | Tests prove code does what it says; the audit asks whether what it says is right |
 | Thresholds | All limits in `configs/` | Constants in code | A reviewer can see and change every assumption in one place |
+
+## The simulator's skateboard (off the plan)
+
+The walk uses the planner's model. The skateboard does not: it is an easter egg, and it must not move the headline
+numbers. Its own choices:
+
+| Decision | Chosen | Instead of | Why |
+|---|---|---|---|
+| A push | One kick each time the back foot meets the ground (the same slice of the animation), then coast | A steady force for as long as W is held | The foot hitting the ground was not moving the board |
+| How hard | Boot friction μ = 0.6 times Mars weight, and 900 W while the foot is down, fading out by 6.2 m/s | The first 60 N motor, which could not climb | 60 N on a 143 kg suited crew is smaller than rolling resistance on this ground. The fade keeps a kick from throwing you into the 7 m/s wobble; a downhill still can |
+| Uphill | While climbing, the kick also pushes 1.5 times the slope's pull | Grip alone | Mars weight is 0.38 of Earth's, so the legal kick is a small shove and a slope stalls it. The extra is past the slip limit, and only uphill |
+| Roughness | +0.08 rolling resistance per metre of the planner's roughness | +0.3 | 0.3 cancelled a real downhill on this site. 0.08 lets a slope build speed; sand still stops the board |
+| Gravity | 3.71 m/s², the same number as the walk and the hop | A skateboard tuned to feel like Earth | It feels harder than Earth because grip scales with weight, not because gravity was set high |

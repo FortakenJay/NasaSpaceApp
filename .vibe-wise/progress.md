@@ -21,9 +21,12 @@
   heights and DTM precision are assumptions; commit order of staged v1.0 vs unstaged round.
 - Verified: 99 pytest, audit 38/38 + 1 finding, tsc/eslint/vite build clean, in-browser QA 25/25.
 
-## 2026-11-15: skateboard kick
-- Jih: a kick fires every time the foot touches the ground and adds speed, enough to climb hills. A downhill run
-  should build speed. The old push was a steady 60 N for the whole time W was held, not tied to the foot.
-- Chosen: one traction-limited kick (μ = 0.6, same as the brake) for the animation's ground-contact slice
-  (0.18–0.55 of each 1.1 s push), power-capped at 340 W so the flat top stays under the 7 m/s wobble.
-  Rolling resistance unchanged. Off-plan, so the planner's headline numbers are untouched.
+## 2026-11-15: skateboard, route colours, go-there
+- Jih: a kick fires every time the foot touches the ground and adds speed, enough to climb hills. Later: kick a
+  little harder uphill; gravity feels harder than Earth. Confirmed 3.71 m/s² is right; grip scales with weight, so
+  each kick adds ~38 % of an Earth shove. Uphill extra is 1.5 × the slope's pull, only while climbing. Kick power
+  900 W, fading by 6.2 m/s. Roughness rolling resistance 0.08 per metre (was 0.3, which cancelled downhills).
+- Route colours: cyan out, orange back. Green stayed the rover, so a green return line was not used.
+- "Go to S3" / "path to U1 from here": the answer draws the way there and the walk back. On the map, Go makes that
+  stop next, then the stops already ticked. In the simulator the ground line changes immediately, and Go follows it.
+- Controls live on the pause screen. The separate controls card covered pause.

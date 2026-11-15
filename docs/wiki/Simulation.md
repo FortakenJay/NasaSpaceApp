@@ -34,16 +34,16 @@ one you can still explore the ground, but there is no route line, suit display o
 | M | Minimap zoom |
 | / | Ask a question (or use the microphone) |
 | Drag · wheel | Look around · zoom |
-| Esc | Pause |
+| Esc, Controls, ? | Pause, and show the key list. The list used to be its own card and sat on top of pause |
 | F | Engine statistics: fps, draw calls, triangles, ground tiles in view, resolution, shadow redraws |
 | N | 1 m relief in the light on the far ground (off by default: the photo already carries its own shading) |
 | Sound (button) | Footsteps, the rover through the thin air, the radio (off by default) |
-| ? | Help |
+| B | Ride the skateboard, or step off (once you have picked it up with E) |
 
 ## What is real
 
-Nothing in the simulator has physics of its own. It runs the planner's models on the planner's data, step for step,
-so what you feel is what the plan assumed.
+The walk has no physics of its own. It runs the planner's models on the planner's data, step for step, so what you
+feel on foot is what the plan assumed. The skateboard, under [Easter eggs](#easter-eggs), is the exception.
 
 - **The ground under your boots.** The physics reads the planner's own 1 m grid: the walking surface the route search
   takes its grades from, roughness, loose sand (from THEMIS thermal inertia) and the off-limits mask, cell for cell
@@ -63,8 +63,12 @@ so what you feel is what the plan assumed.
   planner charges rough ground. Standing still costs resting power (60 W); working at a stop costs 250 W; a hop costs
   the energy of lifting you and the suit, at 25 % muscle efficiency. The oxygen gauge counts down the 8-hour tank minus
   the 30 % reserve, in mission time.
-- **Gravity.** 3.71 m/s². A hop at 1.6 m/s takes 2v/g = 0.86 s and rises v²/2g = 0.35 m, and the QA run measures
-  exactly that.
+- **Gravity.** 3.71 m/s², 38 % of Earth's 9.81. A hop at 1.6 m/s takes 2v/g = 0.86 s and rises v²/2g = 0.35 m, and
+  the QA run measures exactly that. It feels harder than Earth when you push something, because grip is friction
+  times weight, and the weight is smaller. The hill pulls less too. The sluggish part is the push.
+- **The route on the ground.** Cyan is the way out, orange the way back to the rover. Ask "go to S3" from where you
+  stand and those two lines are replaced at once: cyan from your feet to S3, orange from S3 home. Go follows the
+  cyan line, walking or riding. Steer or brake and you stop following it.
 - **The Sun.** The light comes from where the Sun really will be at the rover. The walk starts at the next 09:00 local
   mean solar time (`start_lmst_h` in `configs/eva`), and NASA GISS's Mars24 algorithm (Allison & McEwen 2000) gives the
   Sun's azimuth and elevation every 2 minutes from there. The code reproduces both of NASA's published worked examples
@@ -149,7 +153,15 @@ question goes through the same path.
 ## Easter eggs
 
 There are two. Neither touches the plan; oxygen keeps counting and the debrief says when they were used. Where they
-are and how they work (with spoilers) is in [`TODO.md`](../../TODO.md#3-easter-eggs).
+are is in [`TODO.md`](../../TODO.md#3-easter-eggs).
+
+The skateboard is the one with its own mechanics. A kick fires when the back foot meets the ground, the same moment
+the animation draws, and then the board coasts. The hardest grip-legal kick is 0.6 times Mars weight, so each shove
+is about 38 % of the speed the same boot would add on Earth. Uphill, the foot pushes an extra 1.5 times the slope's
+pull, only while climbing, because that legal kick was stalling on the grades around the rover. Kicks fade out by
+6.2 m/s so pushing alone stays under the 7 m/s wobble; a downhill can still throw you. Rolling resistance adds 0.08
+per metre of the planner's roughness (it was 0.3, which cancelled a downhill on this ground). Sand still stops it.
+The numbers and the check are in `frontend/src/sim/skate.ts` and `tests/test_skate.py`.
 
 ## Under the hood
 
