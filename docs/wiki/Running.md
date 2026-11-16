@@ -74,6 +74,7 @@ The GeoTIFFs still need that bucket, or another download. See [Decisions](Decisi
 | "No 1 m HiRISE stereo terrain covers this point" | The click was outside every cyan outline | Zoom in and click inside one; zoomed out, a click on a dot works too |
 | A Base shows *interrupted* | The server stopped while it was downloading | Press **Resume** |
 | A Base sits at 2% and another cannot be created | The NASA connection is still open and sending nothing. The job stays "running", so it holds the only slot | Press **Cancel**. The slot frees immediately. After 45 seconds with no bytes the step fails on its own and the error is shown |
+| 503 on `/api/catalog/lookup` | The HiRISE index could not be downloaded and there was no catalog on disk yet | Redeploy the build that ships `hirise_dtm_catalog.json.gz`. The lookup then uses that copy |
 | Alignment *weak* on a Base | The photo tiles there are blank or too different (e.g. dust, shadows) | Plan with care: the terrain uses the file's own coordinates and may sit tens of metres off the photo |
 | The microphone does nothing | Browser without speech input (e.g. Firefox) or microphone blocked | Use Chrome or Safari, allow the microphone, or type |
 

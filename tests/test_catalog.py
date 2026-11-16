@@ -78,6 +78,21 @@ def test_base_bbox_is_3_km_and_clipped(entries):
     assert catalog.estimate_bytes(b, 1.0) > 1e8
 
 
+def test_shipped_catalog_answers_a_lookup_without_a_download(monkeypatch, tmp_path):
+    entries = catalog.load_bundled()
+    assert len(entries) > 1000
+    hit = catalog.choose(entries, 3.299576, 137.388238)
+    assert hit and hit[0].entry.product_id.startswith("DTEEC_")
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setattr(catalog, "catalog_dir", lambda: tmp_path)
+
+    def boom(*_a, **_k):
+        raise AssertionError("hosted lookup must not download the index")
+    monkeypatch.setattr("marswalk.sources.raster.download", boom)
+    got = catalog.ensure_index()
+    assert len(got) == len(entries)
+
+
 def test_footprints_geojson(entries):
     gj = catalog.footprints_geojson(entries)
     assert gj["type"] == "FeatureCollection" and len(gj["features"]) == len(entries)

@@ -36,4 +36,4 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.setuptools.package-data]
-marswalk = ["eink_fonts/*.ttf", "eink_fonts/NOTICE.md"]
+marswalk = ["eink_fonts/*.ttf", "eink_fonts/NOTICE.md", "sources/data/*.gz"]

@@ -13,7 +13,9 @@ walking.
 
 Press **New Base** and the outlines appear in cyan; unusable ones are grey, with the reason. Zoomed out, each is a
 dot, and a click near a dot snaps to it. The lookup card then shows the DTM chosen, the ± 3 km window, the download
-size against your free disk space, and a name to edit.
+size against your free disk space, and a name to edit. The hosted site uses the catalog shipped with MarsWalk
+(`src/marswalk/sources/data/hirise_dtm_catalog.json.gz`, 1,370 DTMs) instead of downloading the 8 MB index on
+that click. A failed download used to answer 503 and the card never opened.
 
 ## What happens when you press *Download and create*
 

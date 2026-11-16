@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import gzip
 import json
 import math
+import os
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -110,20 +112,37 @@ def parse(lbl_text: str, tab_lines) -> list[DtmEntry]:
 
 # --- the cached catalog -----------------------------------------------------------------------------------------------
 
+_BUNDLED = Path(__file__).resolve().parent / "data" / "hirise_dtm_catalog.json.gz"
+
+
 def catalog_dir() -> Path:
     from marswalk.sources.fetch import data_root
     return data_root() / "cache" / "catalog"
 
 
+def load_bundled() -> list[DtmEntry]:
+    """The catalog shipped with MarsWalk, so a lookup does not have to download the 8 MB index."""
+    raw = json.loads(gzip.decompress(_BUNDLED.read_bytes()))
+    return [DtmEntry(**e) for e in raw["entries"]]
+
+
 def ensure_index(max_age_days: float = 30.0, log: Callable[[str], None] = print, force: bool = False) -> list[DtmEntry]:
     """The catalog, downloading and parsing the PDS index when missing or older than `max_age_days`.
-    A failed refresh falls back to the cached copy."""
+
+    A failed refresh uses the cached copy, then the copy shipped with MarsWalk. On a hosted
+    function the download is skipped: it is what turned the lookup into a 503.
+    """
+    from marswalk.config import PROJECT_ROOT
     from marswalk.sources.raster import download
     d = catalog_dir()
     cat = d / "catalog.json"
     fresh = cat.exists() and (dt.datetime.now().timestamp() - cat.stat().st_mtime) < max_age_days * 86400
     if fresh and not force:
         return load_catalog(cat)
+    hosted = bool(os.environ.get("VERCEL")) or not os.access(PROJECT_ROOT, os.W_OK)
+    if hosted and not force and _BUNDLED.is_file():
+        log("catalog: using the copy shipped with MarsWalk")
+        return load_bundled()
     try:
         log("catalog: downloading the HiRISE DTM index (about 8 MB) ...")
         for name in ("DTMCUMINDEX.LBL", "DTMCUMINDEX.TAB"):
@@ -142,6 +161,9 @@ def ensure_index(max_age_days: float = 30.0, log: Callable[[str], None] = print,
         if cat.exists():
             log("catalog: refresh failed, using the cached copy")
             return load_catalog(cat)
+        if _BUNDLED.is_file():
+            log("catalog: download failed, using the copy shipped with MarsWalk")
+            return load_bundled()
         raise
 
 

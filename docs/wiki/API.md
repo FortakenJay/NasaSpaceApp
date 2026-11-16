@@ -29,7 +29,7 @@ Interactive docs: http://127.0.0.1:8000/docs.
 | POST | `/api/bases/focus` | Plan at another Base. Body: `{id}`. Every other route then answers for that Base |
 | DELETE | `/api/bases/{id}` | Delete a Base, its files and its stops and plans (403 for Gale, 409 while downloading) |
 | GET | `/api/catalog/footprints` | GeoJSON of every HiRISE DTM, with `supported` and the reason when not (gzip) |
-| GET | `/api/catalog/lookup?lat=&lon=` | The DTMs covering a point, the window, the download size and the free disk space |
+| GET | `/api/catalog/lookup?lat=&lon=` | The DTMs covering a point, the window, the download size and the free disk space. On the hosted site this uses the catalog shipped with MarsWalk, so the click does not wait on the 8 MB index |
 
 Overlay and simulator URLs carry `b=<base id>&v=<data stamp>`, so a browser never shows one Base's image at another.
 Terrain routes answer **409** until `marswalk fetch` has run. `/api/ask` returns the answer as text, the same text
