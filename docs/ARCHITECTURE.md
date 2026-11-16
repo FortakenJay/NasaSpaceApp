@@ -301,7 +301,8 @@ sync with `export/payload.py` and `db/repo.py`.
 - **DB tables:** `sites(id, name)`, `stops(pk, site_id, code, seq, kind, name, lat, lon, dtm_z_m, science, work_time_min)`,
   `plans(id uuid, site_id, created_at, name, cost_model, stop_order, stop_codes JSON, status, result JSON)`,
   `observations(id, site_id, stop_code, created_at, author, note, sample_id)`,
-  `settings(key, value)`.
+  `settings(key, value)`,
+  `terrain_files(site_id, name, byte_size, data)` — the GeoTIFF bytes of a downloaded Base.
 
 ## Milestones
 | | Deliverable | Done when |

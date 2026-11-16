@@ -61,7 +61,7 @@ Two different things get written, and they do not belong in the same place.
 | What | Today | On Vercel | A database would do |
 |---|---|---|---|
 | Stops you add, saved plans, field notes, which Base is in focus | SQLite file `data/marswalk.db` | `/tmp/marswalk/marswalk.db`, because `/var/task` is read-only. A fresh database also loads the stored Gale route in `configs/preview/gale_boxwork_plan.json` | Supabase (Postgres) would keep these rows across restarts. The SQLAlchemy models are ordinary tables and can move |
-| HiRISE catalog, `dtm.tif`, orthophoto, thermal inertia, a new Base's `site.toml` | `data/cache` and `data/raw` | `/tmp/marswalk/...`, same reason | A database does not hold a 50–300 MB GeoTIFF. That needs object storage (Supabase Storage, or the same kind of bucket), or the function downloads the window again |
+| HiRISE catalog, `dtm.tif`, orthophoto, thermal inertia, a new Base's `site.toml` | `data/cache` and `data/raw`, and after a Base download the GeoTIFFs are also rows in `terrain_files` | `/tmp/marswalk/...`, same reason. The database file is on that disk too, so a new instance loses the rows with the files | The download is saved in the database once it has landed. Planning writes the file back from that row when the disk copy is gone |
 
 Chosen for the hackathon deploy: write the temporary disk (`/tmp/marswalk`) instead of failing with "read-only
 file system", and if `/api/site` is down, open the saved Gale demo so the page is not blank. A fresh SQLite file

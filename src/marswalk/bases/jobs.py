@@ -177,6 +177,17 @@ class JobRunner:
             if (bases_dir() / st.base_id).exists() or info.get("product_id"):
                 self.registry.write_info(info)
 
+    def _store_terrain(self, base_id: str, raw) -> None:
+        """Keep each GeoTIFF in the database once the download has landed on disk."""
+        from marswalk.db import repo
+        files = sorted(p for p in raw.glob("*.tif") if p.is_file())
+        if not files:
+            return
+        with self.registry.sessions() as s:
+            for path in files:
+                repo.save_terrain_file(s, base_id, path)
+        self.log(f"saved {len(files)} terrain file(s) in the database")
+
     def _discard(self, base_id: str) -> None:
         from marswalk.sources.fetch import data_root
         for d in (bases_dir() / base_id, data_root() / "raw" / base_id, data_root() / "cache" / base_id):
@@ -226,6 +237,7 @@ class JobRunner:
             self._set(name, "running", frac=f)
         self._set("dtm", "running")
         fetch_site(site, log=self.log, progress=prog, cancel=self._cancel)
+        self._store_terrain(st.base_id, raw_dir(site))
         manifest = json.loads((raw_dir(site) / "manifest.json").read_text())["products"]
         self._set("dtm", "done")
         ti_err = (manifest.get("thermal_inertia") or {}).get("error")

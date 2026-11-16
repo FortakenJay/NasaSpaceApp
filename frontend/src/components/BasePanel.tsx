@@ -129,7 +129,7 @@ function LookupForm({ lookup, creating, onCreate, onCancel }: {
   const [name, setName] = useState('');
   const [productId, setProductId] = useState('');
   const chosen = lookup.candidates.find((c) => c.product_id === productId) ?? lookup.candidates[0];
-  const lowDisk = lookup.free_bytes < 2 * lookup.est_bytes + 1e9;
+  const lowDisk = lookup.free_bytes < lookup.est_bytes;
   if (!chosen) return null;
   return (
     <form

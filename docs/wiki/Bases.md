@@ -28,8 +28,10 @@ size against your free disk space, and a name to edit.
 | Line the terrain up with the map photo | Measures the offset against the global HiRISE photo tiles ([how](Models-and-math.md#a-new-base-measured-against-the-global-photo)) |
 | Place the rover and save | Nearest walkable cell within 100 m of the click; median elevation within 200 m for the radiation estimate |
 
-A Base takes one to three minutes and 130–280 MB. **Cancel** removes everything it downloaded. If the server stops
-mid-download, the Base comes back as *interrupted*, with **Resume**.
+A Base takes one to three minutes and 130–280 MB. The button stays off only when the download itself is larger
+than the free disk. After the files land, each GeoTIFF is stored in the database (`terrain_files`). If that copy
+on disk is later missing, planning writes it back from the row. **Cancel** removes everything it downloaded. If
+the server stops mid-download, the Base comes back as *interrupted*, with **Resume**.
 
 ## What differs from Gale
 

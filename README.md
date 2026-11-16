@@ -193,9 +193,10 @@ temporary disk (`/tmp/marswalk`), which is wiped when that instance goes away. S
 SQLite in that same folder (`/tmp/marswalk/marswalk.db`). A fresh database loads the stored Gale route
 (`configs/preview/gale_boxwork_plan.json`, S1–S5, 1.71 km) so the line is on the map without downloading terrain
 again. The simulation on that site walks the mesh shipped with the page (`frontend/public/sim/gale/`), because
-downloading the elevation file inside the request gets cut off. The project at `https://kcgoeljumzgnkrvraldr.supabase.co` is the intended lasting store. The API does not
-use it yet. Postgres would keep the rows. It would not replace the GeoTIFFs: those still need a file store, or
-the function downloads them again. That split is written up in [Decisions](docs/wiki/Decisions.md).
+downloading the elevation file inside the request gets cut off. A new Base's GeoTIFFs are saved in the database
+after they download (`terrain_files`). On the hosted site that database sits on the same temporary disk, so a
+new instance loses them too. The project at `https://kcgoeljumzgnkrvraldr.supabase.co` is the intended lasting
+store. The API does not use it yet. That split is written up in [Decisions](docs/wiki/Decisions.md).
 
 ## Inside
 

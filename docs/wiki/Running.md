@@ -68,6 +68,7 @@ The GeoTIFFs still need that bucket, or another download. See [Decisions](Decisi
 | 404 on http://localhost:8000/ | That is the API; the app is on port 5173 | Open http://localhost:5173 |
 | "terrain not cached" or a path to another folder | Locally, the package was installed from an older copy, or `marswalk fetch` has not been run. On Vercel, `/tmp` was wiped and the elevation file is gone | Locally: `pip install -e ".[dev]"` in this folder, then `marswalk fetch`. On Vercel: plan again and wait for the download; it does not survive a new instance |
 | `Read-only file system: '/var/task/data/...'` | A hosted function tried to write the deployment directory | Redeploy a build that stores catalogs and terrain under `/tmp/marswalk` |
+| Not enough free disk space for this Base | The download is larger than the free space on the disk the files are written to. On the hosted site that disk is about 500 MB | The download has to fit once. A 276 MB window fits in 528 MB free; a larger one does not |
 | Space weather "partly unavailable" | NASA DONKI was slow or the hourly limit was reached | Wait, add a key to `.env`, or press *Ask NASA again now* |
 | Map colour stops at slanted edges | That is the end of the HiRISE stereo strip | `marswalk fetch` adds the USGS merged DEM around it |
 | "No 1 m HiRISE stereo terrain covers this point" | The click was outside every cyan outline | Zoom in and click inside one; zoomed out, a click on a dot works too |

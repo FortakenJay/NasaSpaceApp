@@ -36,6 +36,22 @@ def test_preview_plan_is_the_stored_gale_route():
         assert repo.seed_preview_plan(s, site.id) is False
 
 
+def test_terrain_file_is_saved_and_written_back(tmp_path):
+    from marswalk.db import repo
+    from marswalk.db.engine import make_engine, make_session_factory
+
+    src = tmp_path / "dtm.tif"
+    src.write_bytes(b"elevation-window")
+    sessions = make_session_factory(make_engine("sqlite://"))
+    with sessions() as s:
+        assert repo.save_terrain_file(s, "b_demo", src) == len(b"elevation-window")
+        src.unlink()
+        dest = tmp_path / "raw"
+        assert repo.restore_terrain(s, "b_demo", dest) == 1
+        assert (dest / "dtm.tif").read_bytes() == b"elevation-window"
+        assert repo.restore_terrain(s, "b_demo", dest) == 0
+
+
 def test_health(client):
     r = client.get("/api/health")
     assert r.status_code == 200 and r.json()["ok"] is True

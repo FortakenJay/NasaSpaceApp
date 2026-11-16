@@ -279,6 +279,11 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
         """The LayerStack, or 409 when `marswalk fetch` has not cached the DTM yet."""
         site = F().site
         from marswalk.layers.stack import build_stack
+        from marswalk.sources.fetch import raw_dir
+        raw = raw_dir(site)
+        if not (raw / "dtm.tif").is_file():
+            with app.state.sessions() as s:
+                repo.restore_terrain(s, site.id, raw)
         try:
             with lock:
                 return build_stack(site, eva)
@@ -719,9 +724,9 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
         root = data_root()
         root.mkdir(parents=True, exist_ok=True)
         free = shutil.disk_usage(root).free
-        if free < 2 * need + 1_000_000_000:
-            raise HTTPException(507, f"Not enough free disk space: this Base needs about {need / 1e9:.1f} GB "
-                                     f"and {free / 1e9:.1f} GB is free (keeping 1 GB spare).")
+        if free < need:
+            raise HTTPException(507, f"Not enough free disk space: this Base needs about {need / 1e6:.0f} MB "
+                                     f"and {free / 1e6:.0f} MB is free.")
         try:
             return runner.start(body.lat, body.lon, body.name, cands[0].entry.product_id)
         except Busy as e:

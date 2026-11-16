@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from marswalk.config import PROJECT_ROOT, SiteConfig
-from marswalk.db.models import Observation, Plan, Setting, Site, Stop
+from marswalk.db.models import Observation, Plan, Setting, Site, Stop, TerrainFile
 
 USER_KIND = "user"   # stops added on the map (the others, "start" and "stop", are seeded from the site config)
 
@@ -69,12 +69,43 @@ def _sync_config_stops(session: Session, site: SiteConfig) -> None:
         session.commit()
 
 
+def save_terrain_file(session: Session, site_id: str, path) -> int:
+    """Store one downloaded terrain file. Returns its size in bytes."""
+    from pathlib import Path
+    path = Path(path)
+    blob = path.read_bytes()
+    row = session.get(TerrainFile, (site_id, path.name))
+    if row is None:
+        session.add(TerrainFile(site_id=site_id, name=path.name, byte_size=len(blob), data=blob))
+    else:
+        row.byte_size, row.data = len(blob), blob
+    session.commit()
+    return len(blob)
+
+
+def restore_terrain(session: Session, site_id: str, dest) -> int:
+    """Write stored terrain files back to disk when the copy there is gone. Returns how many were written."""
+    from pathlib import Path
+    dest = Path(dest)
+    rows = session.scalars(select(TerrainFile).where(TerrainFile.site_id == site_id)).all()
+    written = 0
+    for row in rows:
+        target = dest / row.name
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(row.data)
+        written += 1
+    return written
+
+
 def delete_site(session: Session, site_id: str) -> bool:
     """Remove a site and everything recorded at it (observations, plans, stops). Returns False if it was not there.
     Order matters: plans and observations have no cascade, and SQLite enforces the foreign keys."""
     from sqlalchemy import delete
     session.execute(delete(Observation).where(Observation.site_id == site_id))
     session.execute(delete(Plan).where(Plan.site_id == site_id))
+    session.execute(delete(TerrainFile).where(TerrainFile.site_id == site_id))
     row = session.get(Site, site_id)
     if row is not None:
         session.delete(row)          # stops go with it (relationship cascade)

@@ -23,7 +23,7 @@ Interactive docs: http://127.0.0.1:8000/docs.
 | GET | `/api/sim/fine.bin?v=` | The 1 m grid (gzip): walk-surface heights, terrain heights, roughness, then sand, off-limits and radio-shadow bits |
 | GET | `/api/sim/sun?start_utc=&hours=` | The Sun's azimuth and elevation through the walk, every 2 min (Mars24). Default start: the next `start_lmst_h` local time |
 | GET | `/api/bases` | Every saved Base, the one in focus, and the creation job if there is one |
-| POST | `/api/bases` | Make a Base. Body: `{lat, lon, name?, product_id?}`. **202** and the job; 422 where there is no 1 m HiRISE terrain; 507 if the disk is too full; 409 while another Base is being made |
+| POST | `/api/bases` | Make a Base. Body: `{lat, lon, name?, product_id?}`. **202** and the job; 422 where there is no 1 m HiRISE terrain; 507 if the download is larger than the free disk; 409 while another Base is being made. The GeoTIFFs are then stored in `terrain_files` |
 | GET | `/api/bases/job` | Progress of the Base being made: steps, percent, error |
 | POST | `/api/bases/{id}/cancel` · `/api/bases/{id}/resume` | Stop a download (its files are removed) or carry on with an interrupted one |
 | POST | `/api/bases/focus` | Plan at another Base. Body: `{id}`. Every other route then answers for that Base |

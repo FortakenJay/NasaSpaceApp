@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -67,6 +67,19 @@ class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text)
+
+
+class TerrainFile(Base):
+    """A downloaded terrain file (the GeoTIFF), kept in the database after the Base is fetched.
+
+    The hosted disk is only a few hundred megabytes, so the lasting copy is this row. The file on
+    disk is what the planner opens; it is written back from here when that copy is missing.
+    """
+    __tablename__ = "terrain_files"
+    site_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)  # dtm.tif, ortho_1m.tif, ...
+    byte_size: Mapped[int] = mapped_column(BigInteger)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class Observation(Base):
