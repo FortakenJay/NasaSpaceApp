@@ -171,7 +171,7 @@ Every formula, with its source: [Models and math](docs/wiki/Models-and-math.md).
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 marswalk fetch            # one time: the terrain window around the rover (~0.6 GB)
-marswalk audit            # recompute every number (38 checks)
+marswalk audit            # recompute every number (39 checks)
 marswalk serve            # API on :8000
 cd frontend && npm install && npm run dev     # the app on http://localhost:5173
 ```
@@ -199,6 +199,7 @@ to the Python (a test runs the TypeScript in Node against the Python on 2,400 st
 the game itself in the browser: open the app with `?qa=1`.
 
 - [How it works](docs/wiki/How-it-works.md): the pipeline, end to end
+- [Bases](docs/wiki/Bases.md): planning anywhere else HiRISE has 1 m stereo terrain
 - [Simulation](docs/wiki/Simulation.md): what the walk simulator models, what it doesn't, and how it was checked
 - [TODO](TODO.md): the roadmap for more realistic models and a faster engine (and where the easter eggs are)
 - [Decisions](docs/wiki/Decisions.md): what we chose over what, and why

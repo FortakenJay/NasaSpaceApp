@@ -263,9 +263,10 @@ The app shows these messages instead of failing. TypeScript mirrors live in `fro
 sync with `export/payload.py` and `db/repo.py`.
 
 ## Quality checks
-- `pytest`: 99 tests (geo, config, pure logic, pipeline on synthetic terrain, API + DB on an in-memory SQLite per
-  test, architecture boundaries, audit, Sun, physics parity with the TypeScript, sound absorption).
-- `marswalk audit`: 38 independent recomputations on the real data, plus model-vs-data findings.
+- `pytest`: 132 tests (geo, config, pure logic, pipeline on synthetic terrain, API + DB on an in-memory SQLite per
+  test, architecture boundaries, audit, Sun, physics parity with the TypeScript, sound absorption, HiRISE catalog,
+  radiation estimate, Base jobs and routes, square-pixel resampling).
+- `marswalk audit`: 39 independent recomputations on the real data, plus model-vs-data findings; `--base <id>` for a Base.
 - Simulator: 25 in-browser checks (`?qa=1`).
 - `npm --prefix frontend run lint`: ESLint (typescript-eslint, react-hooks, API-boundary rules).
 - `npm --prefix frontend run doctor`: React Doctor, **100/100** on 2026-11-13. It first found 3 issues, all fixed: the map

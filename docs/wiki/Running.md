@@ -10,7 +10,7 @@ cp .env.example .env          # optional: put your NASA_API_KEY in it
 
 marswalk fetch                # download the terrain window (one time; ~0.6 GB with the merged DEM)
 marswalk layers               # print slope, roughness, sand at each stop; check the registration line
-marswalk audit                # recompute every number and compare (30 checks)
+marswalk audit                # recompute every number and compare (39 checks)
 marswalk serve                # API on :8000
 
 cd frontend && npm install && npm run dev    # app on http://localhost:5173

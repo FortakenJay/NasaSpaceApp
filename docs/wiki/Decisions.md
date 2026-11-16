@@ -57,7 +57,7 @@ What was chosen, what it was chosen over, and why.
 
 | Decision | Chosen | Instead of | Why |
 |---|---|---|---|
-| Checking numbers | `marswalk audit`: independent recomputation, 30 checks | Unit tests alone | Tests prove code does what it says; the audit asks whether what it says is right |
+| Checking numbers | `marswalk audit`: independent recomputation, 39 checks | Unit tests alone | Tests prove code does what it says; the audit asks whether what it says is right |
 | Thresholds | All limits in `configs/` | Constants in code | A reviewer can see and change every assumption in one place |
 
 ## The simulator's skateboard (off the plan)

@@ -100,8 +100,8 @@ feel on foot is what the plan assumed. The skateboard, under [Easter eggs](#east
   the simulator's own choice; the planner never plans a backwards step.
 - **Off-limits ground warns, it does not stop you.** Time spent on it is logged and shown in the debrief. Grades over
   20° do stop you.
-- **Gale only.** The ground, photo, radiation rate and registration fix are measured for this site. A new site needs its
-  own site file and HiRISE terrain model; the code is the same.
+- **Measured best at Gale.** At a [Base](Bases.md) the simulator walks that Base's own terrain and photo, but its
+  radiation rate is an estimate and its alignment was measured automatically, not by hand.
 
 ## The debrief
 

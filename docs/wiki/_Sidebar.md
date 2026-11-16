@@ -5,6 +5,7 @@
 - [Data sources](Data-sources.md)
 - [Models and math](Models-and-math.md)
 - [Audit](Audit.md)
+- [Bases](Bases.md)
 - [Voice questions](Voice-questions.md)
 - [Suit display](Suit-display.md)
 - [Simulation](Simulation.md)
