@@ -51,12 +51,22 @@ def check_constants(site: SiteConfig, eva: EVAConfig) -> list[Check]:
     g = float(eva.cost.get("metabolic", {}).get("gravity_mps2", 3.71))
     out.append(Check("Constants", "Mars surface gravity (m/s²)", 3.71, g, _close(g, 3.721, abs_=0.02),
                      "NASA Mars fact sheet: 3.71-3.72 m/s²"))
+    from marswalk.spaceweather import radiation
     gy = float(site.spaceweather.get("rad_gcr_dose_mgy_per_day", 0))
     sv = float(site.spaceweather.get("rad_dose_equivalent_msv_per_day", 0))
-    out.append(Check("Constants", "Surface dose rate (mGy/day)", 0.21, gy, gy == 0.21,
-                     "Hassler et al. 2014, Science 343: 0.21 ± 0.04 mGy/day (Curiosity RAD, Gale)"))
-    out.append(Check("Constants", "Surface dose equivalent (mSv/day)", 0.64, sv, sv == 0.64,
-                     "Hassler et al. 2014: 0.64 ± 0.12 mSv/day"))
+    est = site.spaceweather.get("rad_estimate")
+    if est:   # a Base away from Gale: the config's values must equal the elevation model's, recomputed here
+        want = radiation.estimate(float(est["elevation_m"]))
+        out.append(Check("Constants", "Surface dose rate, estimated for this Base (mGy/day)", want["rad_gcr_dose_mgy_per_day"],
+                         gy, _close(gy, want["rad_gcr_dose_mgy_per_day"], rel=1e-3),
+                         "spaceweather.radiation: Gale's RAD value scaled by surface pressure (Guo et al. 2017)"))
+        out.append(Check("Constants", "Surface dose equivalent, estimated (mSv/day)", want["rad_dose_equivalent_msv_per_day"],
+                         sv, _close(sv, want["rad_dose_equivalent_msv_per_day"], rel=1e-3), "same ratio as the dose rate"))
+    else:
+        out.append(Check("Constants", "Surface dose rate (mGy/day)", 0.21, gy, gy == 0.21,
+                         "Hassler et al. 2014, Science 343: 0.21 ± 0.04 mGy/day (Curiosity RAD, Gale)"))
+        out.append(Check("Constants", "Surface dose equivalent (mSv/day)", 0.64, sv, sv == 0.64,
+                         "Hassler et al. 2014: 0.64 ± 0.12 mSv/day"))
     out.append(Check("Constants", "Energy per kg of O₂ (kJ/kg)", 4.825 * 4.184 / 1.429e-3, KJ_PER_KG_O2,
                      _close(KJ_PER_KG_O2, 14127.0, rel=0.002), "4.825 kcal/L O₂ at RQ 0.82 (Lusk/Weir) ÷ 1.429 g/L"))
     b = usable_budgets(eva)
@@ -248,9 +258,10 @@ def check_plan(site: SiteConfig, eva: EVAConfig, stack, plan, payload: dict) -> 
     lim_d = float(eva.eva["max_distance_from_rover_m"])
     out.append(Check("Safety", "Farthest stop from the rover (m)", f"≤ {lim_d:g}", round(far), far <= lim_d, "eva.max_distance_from_rover_m"))
     # Radiation for this walk.
-    gy = float(site.spaceweather.get("rad_gcr_dose_mgy_per_day", 0.21))
+    from marswalk.spaceweather.radiation import rates
+    gy = rates(site.spaceweather)[0]
     out.append(Check("Radiation", "Dose for this walk (mGy)", round(gy * dur / 60 / 24, 4), round(gy * float(s["duration_h"]) / 24, 4),
-                     _close(gy * dur / 60 / 24, gy * float(s["duration_h"]) / 24, rel=0.01), "0.21 mGy/day × hours ÷ 24"))
+                     _close(gy * dur / 60 / 24, gy * float(s["duration_h"]) / 24, rel=0.01), f"{gy:g} mGy/day × hours ÷ 24"))
     return out
 
 
@@ -262,13 +273,17 @@ def check_terrain(site: SiteConfig, stack) -> list[Check]:
     a = g.rc_to_latlon(stack.shape[0] // 2, stack.shape[1] // 2)
     b = g.rc_to_latlon(stack.shape[0] // 2, stack.shape[1] // 2 + 1)
     c = g.rc_to_latlon(stack.shape[0] // 2 + 1, stack.shape[1] // 2)
-    R = float(site.body["radius_m"])
+    # on the grid's own sphere (HiRISE DTMs away from Gale use a local radius, e.g. 3,394,840 m at Jezero)
+    ell = g.crs.ellipsoid
+    R = float(ell.semi_major_metre) if ell is not None else float(site.body["radius_m"])
     ew, ns = ground_distance_m(*a, *b, R), ground_distance_m(*a, *c, R)
     out.append(Check("Terrain", "Pixel size north-south (m)", round(g.pixel_m, 4), round(ns, 4), _close(ns, g.pixel_m, rel=1e-4),
                      "affine transform vs haversine"))
-    out.append(Check("Terrain", "Pixel size east-west (m)", round(g.pixel_m * math.cos(math.radians(lat0)), 4), round(ew, 4),
-                     _close(ew, g.pixel_m * math.cos(math.radians(lat0)), rel=1e-3),
-                     "equirectangular with lat_ts = 0: pixel × cos(lat); slopes are within 0.4 % of the true value"))
+    from marswalk.sources.raster import SQUARE_TOL
+    out.append(Check("Terrain", f"Pixel size east-west (m), square within {100 * SQUARE_TOL:g} %", round(g.pixel_m, 4),
+                     round(ew, 4), _close(ew, g.pixel_m, rel=SQUARE_TOL),
+                     f"the layers and routes treat pixels as square; at {lat0:.1f}° this grid is "
+                     f"{100 * abs(ew / g.pixel_m - 1):.2f} % off (fetch resamples above {100 * SQUARE_TOL:g} %)"))
     # Slope from the layer vs slope from a plane fit at a random sample of walkable 5 m blocks.
     rng = np.random.default_rng(0)
     ok = np.argwhere(~stack.nogo)
@@ -309,6 +324,11 @@ def run(site: SiteConfig, eva: EVAConfig, stack=None, cost: str | None = None) -
         from marswalk.route.astar import snap
         from marswalk.route.plan import build_plan, radio_field
         checks += check_terrain(site, stack)
+        if not site.stops:
+            # A new Base starts with only the rover point; stops added in the app live in the database, not the file.
+            checks.append(Check("Plan", "Plan checks", "science stops in the site file", "none", True,
+                                "skipped: this site has no stops in its stops file (a new Base)", finding=True))
+            return checks
         rc = snap(stack, stack.grid.latlon_to_rc(site.start.lat, site.start.lon))
         radio = radio_field(stack, eva, rc, float(site.body["radius_m"]))
         from marswalk.layers import uncertainty

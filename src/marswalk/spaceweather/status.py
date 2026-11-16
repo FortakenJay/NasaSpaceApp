@@ -183,7 +183,8 @@ def current_status(spaceweather_cfg: dict, duration_h: float, api_key: str, now:
     Never raises on network trouble and never waits longer than STATUS_DEADLINE_S."""
     now = now or dt.datetime.now(UTC)
     client = client or ApiClient()
-    rate = float(spaceweather_cfg.get("rad_gcr_dose_mgy_per_day", 0.21))
+    from marswalk.spaceweather.radiation import rates
+    rate = rates(spaceweather_cfg)[0]
     base = spaceweather_cfg.get("donki_base_url", "https://api.nasa.gov/DONKI")
     got = client.get_many(feed_requests(base, api_key, now.date()), deadline_s=STATUS_DEADLINE_S, force=force)
 

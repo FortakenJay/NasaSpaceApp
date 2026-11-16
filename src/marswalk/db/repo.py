@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from marswalk.config import SiteConfig
-from marswalk.db.models import Observation, Plan, Site, Stop
+from marswalk.db.models import Observation, Plan, Setting, Site, Stop
 
 USER_KIND = "user"   # stops added on the map (the others, "start" and "stop", are seeded from the site config)
 
@@ -66,6 +66,38 @@ def _sync_config_stops(session: Session, site: SiteConfig) -> None:
                 changed = True
     if changed:
         session.commit()
+
+
+def delete_site(session: Session, site_id: str) -> bool:
+    """Remove a site and everything recorded at it (observations, plans, stops). Returns False if it was not there.
+    Order matters: plans and observations have no cascade, and SQLite enforces the foreign keys."""
+    from sqlalchemy import delete
+    session.execute(delete(Observation).where(Observation.site_id == site_id))
+    session.execute(delete(Plan).where(Plan.site_id == site_id))
+    row = session.get(Site, site_id)
+    if row is not None:
+        session.delete(row)          # stops go with it (relationship cascade)
+    session.commit()
+    return row is not None
+
+
+# --- settings -------------------------------------------------------------------------------------
+
+def get_setting(session: Session, key: str) -> str | None:
+    row = session.get(Setting, key)
+    return row.value if row else None
+
+
+def set_setting(session: Session, key: str, value: str | None) -> None:
+    row = session.get(Setting, key)
+    if value is None:
+        if row is not None:
+            session.delete(row)
+    elif row is None:
+        session.add(Setting(key=key, value=value))
+    else:
+        row.value = value
+    session.commit()
 
 
 # --- sites & stops --------------------------------------------------------------------------------

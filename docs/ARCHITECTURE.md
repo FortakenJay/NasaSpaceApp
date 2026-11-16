@@ -1,10 +1,40 @@
 # MarsWalk Traverse Planner: Architecture
 
-Status: **v1.1** (2026-11-15). M1-M5 are built and run on the real Gale data: fetch, layers, numba cost kernels,
+Status: **v1.2** (2026-11-15). M1-M5 are built and run on the real Gale data: fetch, layers, numba cost kernels,
 least-cost search, plan assembly, walk-back safe zone, space weather, overlays, voice, suit display, audit and the walk
-simulator. 99 pytest tests; `marswalk audit` 38 of 38 checks plus one finding; 25 simulator checks in the browser
-(`?qa=1`). Open: M6 3-D planning table (spec only). The sections below are newest first; the v0.3 design and the
-milestone table further down are kept as the record of how it was planned.
+simulator. v1.2 adds **Bases**: the same pipeline anywhere with a 1 m HiRISE stereo DTM. 132 pytest tests;
+`marswalk audit` at Gale 38 of 39 (the open item is the 21 m merged-DEM registration residual), at the Jezero Base
+17 of 17; 25 simulator checks in the browser (`?qa=1`). Open: M6 3-D planning table (spec only). The sections below
+are newest first; the v0.3 design and the milestone table further down are kept as the record of how it was planned.
+
+### Added in v1.2 (Bases: plan anywhere HiRISE has stereo terrain)
+- **A Base is a generated site.** `bases/jobs.py` writes `data/bases/<id>/{site.toml, stops.json, base.json}` and
+  runs the unchanged pipeline (`fetch_site`, `build_stack`, `build_plan`) on it. Gale stays the built-in site from
+  `configs/`; it can't be deleted.
+- **Finding the data** (`sources/catalog.py`): the PDS `DTMCUMINDEX` (cached 30 days in `data/cache/catalog/`) parsed
+  into DTM entries with their valid-data corners and orthophotos; `supported()` (equirectangular, ≤ 1.1 m, has a 1 m
+  RED ortho, doesn't cross 180°); `choose()` (finest, then farthest from the strip edge, then newest); THEMIS TI tile
+  names; the ± 3 km window; footprints as GeoJSON.
+- **The job** (`JobRunner`): one background thread; steps lookup → probe (exact grid from the file, data at the point)
+  → dtm → ti → ortho → align → place (nearest walkable cell within 100 m; median elevation within 200 m for radiation).
+  Progress and cancel go down into `raster.read_bbox` (512-row strips) and `raster.download`. Cancel removes the
+  Base's folders; a job killed with the server comes back as *interrupted* with Resume. Disk check: 2 × estimate + 1 GB.
+- **Square pixels** (`raster.square_grid`, `fetch._square_pixels`): the layers and the route search treat a pixel as
+  a square of `pixel_m`. An equirectangular DTM is square on the ground only at its standard parallel, so a window
+  more than 0.5 % off is resampled once (bilinear) onto the same projection with `lat_ts` = the Base's latitude,
+  marked `square` in the manifest. Gale (0.35 %) is untouched; Jezero was 1.8 % off.
+- **Alignment** (`layers/align.py`, `sources/tiles.py`): the Base's ortho vs the global HiRISE photo tiles it is drawn
+  on; coarse 5 m then five 512 m patches at 1.3 m; quality good / fair / coarse / weak; the offset is written as
+  `products.dtm.basemap_offset_m`, so `coverage.shifted` applies it like Gale's. `marswalk base realign` re-measures.
+- **Radiation** (`spaceweather/radiation.py`): `estimate(elevation)` (Guo et al. 2017 pressure scaling) and `rates()`,
+  now the only source of dose numbers for `sim`, `eink`, `ask`, `audit` and `status`.
+- **Focus** (`api/app.py`): one `Focus` object (site, cached fields, simulator cache) replaced when the focus moves;
+  each route reads `F()` once. `Setting` table (`focused_base`). Layer and simulator URLs carry `b=` and `v=`.
+  Frontend: `useFocusBase` / `useDeleteBase` drop the old Base's queries and reset the site query, and `<Workspace
+  key={site.id}>` remounts, so nothing from one Base shows at another.
+- **Frontend**: `BasePanel.tsx` (list, New Base lookup card, job progress), `useBaseWorkflow.ts`, `map/useBaseLayers.ts`
+  (markers with a Focus/Delete popup, HiRISE footprints while picking, drawn as dots at planet scale; a click near a
+  dot snaps to that footprint).
 
 ### Added in v1.1 (operations layers, gait, consumables, engine round)
 - **Radio shadow** (`layers/radio.py`): numba ray sweep of line of sight from the rover's antenna (`[comms]` heights,
@@ -201,6 +231,11 @@ React components ──hooks──► src/api/queries.ts ──► src/api/endpo
 | `frontend/src/api/` | `client.ts` (only fetch), `endpoints.ts`, `queries.ts` (TanStack Query hooks), `types.ts`, `errors.ts`, `index.ts` | ✅ |
 | `frontend/src/App.tsx`, `components/*` | Layout state; Plan (compute + save + saved list), StopList, StopLog (field log), LayerToggles, SpaceWeather | ✅ verified end to end |
 | `frontend/src/map/` | `MarsMap.tsx` (OpenLayers in React: create once, effects sync props, full cleanup), `mars.ts` (projection + Trek grid), `layers.ts` | ✅ |
+| `sources/catalog.py` | HiRISE DTM index → entries, footprints, `choose`, TI tile, Base window | ✅ v1.2 |
+| `sources/tiles.py` | Global photo tiles → mosaic on an eqc grid (cache, retries, 4 at a time) | ✅ v1.2 |
+| `layers/align.py` | Ortho vs photo tiles: offset + quality | ✅ v1.2 |
+| `bases/registry.py`, `bases/jobs.py`, `bases/tomlw.py` | Saved Bases, focus, delete; the creation job; TOML writer | ✅ v1.2 |
+| `spaceweather/radiation.py` | Measured (Gale) or estimated dose rates | ✅ v1.2 |
 | `frontend/src/views/planningTable.ts` | CesiumJS 3-D planning table | M6 (spec only) |
 
 ## API
@@ -220,15 +255,18 @@ React components ──hooks──► src/api/queries.ts ──► src/api/endpo
 | GET | `/api/status` | `{level, reason, …}` | ✅ `useSpaceWeather` (M5 built in v0.5) |
 | GET | `/api/sim/terrain`, `/api/sim/terrain.bin`, `/api/sim/fine.bin`, `/api/sim/sun`, `/api/sim/texture.png` | the simulator's data (see v1.0 and v1.1 above) | ✅ |
 | GET | `/api/layers/{radio,shelter,uncertain}.png` | operations overlays (v1.1) | ✅ |
+| GET, POST | `/api/bases`, `/api/bases/job`, `/api/bases/{id}/cancel`, `/api/bases/{id}/resume`, `/api/bases/focus`; DELETE `/api/bases/{id}` | Bases (v1.2; see the [API wiki](wiki/API.md)) | ✅ `useBases`, `useCreateBase`, `useFocusBase`, `useDeleteBase` |
+| GET | `/api/catalog/footprints`, `/api/catalog/lookup` | HiRISE DTM footprints; what covers a point | ✅ `useFootprints`, `useBaseLookup` |
 
 Not-yet-built stages answer `501 {"milestone": "Mx", "detail": …}`; unknown stops/plans answer 404; invalid bodies 422.
 The app shows these messages instead of failing. TypeScript mirrors live in `frontend/src/api/types.ts`; keep them in
 sync with `export/payload.py` and `db/repo.py`.
 
 ## Quality checks
-- `pytest`: 99 tests (geo, config, pure logic, pipeline on synthetic terrain, API + DB on an in-memory SQLite per
-  test, architecture boundaries, audit, Sun, physics parity with the TypeScript, sound absorption).
-- `marswalk audit`: 38 independent recomputations on the real data, plus model-vs-data findings.
+- `pytest`: 132 tests (geo, config, pure logic, pipeline on synthetic terrain, API + DB on an in-memory SQLite per
+  test, architecture boundaries, audit, Sun, physics parity with the TypeScript, sound absorption, HiRISE catalog,
+  radiation estimate, Base jobs and routes, square-pixel resampling).
+- `marswalk audit`: 39 independent recomputations on the real data, plus model-vs-data findings; `--base <id>` for a Base.
 - Simulator: 25 in-browser checks (`?qa=1`).
 - `npm --prefix frontend run lint`: ESLint (typescript-eslint, react-hooks, API-boundary rules).
 - `npm --prefix frontend run doctor`: React Doctor, **100/100** on 2026-11-13. It first found 3 issues, all fixed: the map

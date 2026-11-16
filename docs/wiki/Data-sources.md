@@ -12,6 +12,9 @@ Everything on the map is real NASA or USGS data. Nothing is generated or invente
 | **Radiation** | Curiosity RAD surface measurements (Hassler et al. 2014) | per day | Dose for the walk |
 | **Space weather** | NASA DONKI: CME analyses with WSA-ENLIL arrival predictions, SEP events, solar flares | live | Go / caution / no-go |
 | **Stops** | Curiosity (MSL) waypoints around the Mount Sharp boxwork | waypoint | S1–S5 science stops |
+| **Terrain for a new Base** | HiRISE PDS cumulative DTM index `DTMCUMINDEX.TAB` (1,370 DTMs, refreshed monthly) | per DTM | Where a Base can go, and which DTM and orthophoto to download |
+| **Photo anywhere** | Esri/USGS *OnMars* global HiRISE mosaic (z ≤ 17) and CTX mosaic (z ≤ 11) | 25 cm–20 m | Basemap and alignment target for a new Base |
+| **Radiation elsewhere** | RAD dose vs surface pressure (Guo et al. 2017) | per day | Estimated dose at a Base's elevation |
 | **Walking model** | SEXTANT traverse planner (Johnson et al. 2010): Marquez speed curve, Santee metabolic rate | — | Time and energy of every step |
 
 ## How much is downloaded
@@ -26,6 +29,22 @@ Everything on the map is real NASA or USGS data. Nothing is generated or invente
 
 Everything is cached in `data/raw/<site>/` with a manifest of sources and checksums. The fetch re-runs only when the
 window changes.
+
+## Finding the data for a new Base
+
+Everything a Base needs can be found from where you click, with no hand-filled URLs:
+
+- **Terrain:** the HiRISE DTM index lists every DTM with the four corners of its valid data. A Base needs one that
+  is equirectangular, 1 m (≤ 1.1 m), has a 1 m RED orthophoto, and does not cross 180° (843 of the 1,370). Of
+  several, MarsWalk takes the finest, then the one whose edge is farthest from the point, then the newest. The
+  index rounds its projection numbers, so the exact grid is read from the DTM file itself.
+- **Photo:** the orthophoto is in the same PDS folder as the DTM. MarsWalk takes the left image of the stereo pair.
+- **Thermal inertia:** the THEMIS quantitative tile name follows from the point (`{60S|30S|00N|30N}{000…300}E`),
+  so it works within ±60° latitude.
+- **Window:** the Base ± 3 km, clipped to the DTM strip: about 130–280 MB in all.
+
+Bases are kept in `data/bases/<id>/` (`site.toml`, `stops.json`, `base.json`) with their rasters in
+`data/raw/<id>/`. Not available away from Gale: the merged 1 m DEM and RAD's own measurements.
 
 ## Facts verified against the files (2026-11-13/14)
 

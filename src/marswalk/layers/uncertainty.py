@@ -58,8 +58,11 @@ def offlimits_frequency(stack, hazards: dict, window: tuple[int, int, int, int],
 
 
 def walk_window(site, stack, margin_m: float = 400.0) -> tuple[int, int, int, int]:
-    """The walk area: the rover and every stop, plus a margin (the simulator's window)."""
+    """The walk area: the rover and every stop, plus a margin (the simulator's window). A Base with no science stops
+    yet gets 1 km around the rover, so the layer still covers where stops will be added."""
     from marswalk.sim import area
+    if not site.stops:
+        margin_m = max(margin_m, 1000.0)
     return area(stack, [(site.start.lat, site.start.lon), *[(s.lat, s.lon) for s in site.stops]], margin_m)
 
 

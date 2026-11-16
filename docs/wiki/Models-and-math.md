@@ -99,6 +99,23 @@ of **0.64 ± 0.12 mSv/day** (Hassler et al. 2014, *Science* 343). MarsWalk scale
 3 h 31 min → 0.031 mGy (0.094 mSv). That is the galactic cosmic ray background. A solar particle event would add to
 it, which is what the space-weather check is for.
 
+### Away from Gale: an estimate from air pressure
+
+RAD has only ever measured on the ground at Gale. A Base elsewhere sits under more or less atmosphere, and the
+atmosphere is the shield. Guo et al. 2017 (*JGR Planets* 122: 329, section 3.2) found from RAD's own record that the
+dose rate falls as surface pressure rises: **κ = −0.13 to −0.17 µGy/day per Pa**. MarsWalk uses the middle of that:
+
+```
+P(z) = 840 Pa · exp(−(z + 4501 m) / 11.1 km)       hydrostatic, from Bradbury Landing (−4,501 m)
+D(z) = 0.21 mGy/day + κ · (P(z) − 840 Pa)          κ = −0.15 µGy/day/Pa
+```
+
+At the Jezero delta Base (−2,569 m): about 706 Pa, so **0.230 mGy/day**, range 0.212–0.233 (from the transport
+model's weakest κ, 0.018, to the strongest measured, 0.17). The dose equivalent is scaled by the same ratio, which
+assumes the radiation's quality factor does not change with depth. RAD saw this trend only between 700 and 950 Pa;
+outside that, the app says the value is an extrapolation. Everywhere but Gale, the dose is labelled *estimate* in the
+app, on the suit display and in spoken answers.
+
 ## Space weather go/no-go
 
 From NASA DONKI (via the central API client, cached 30 min). Times are relative to now:
@@ -126,6 +143,34 @@ measurements found the same shift:
 
 `products.dtm.basemap_offset_m` applies the shift at load time. With the merged DEM present, the remaining offset is
 measured again at every build (512 m patch, ±60 m search, sub-metre peak fit) and applied when r ≥ 0.9.
+
+### A new Base: measured against the global photo
+
+A new Base has no merged DEM and no hand-measured shift, so `layers/align.py` measures it when the Base is made. It
+compares the Base's own 1 m HiRISE orthophoto (on the DTM grid) with the global HiRISE photo tiles the map shows:
+
+1. **Coarse:** both images averaged to 5 m over ±1.5 km, band-passed (difference of Gaussians), then FFT
+   cross-correlation with a 1/10-pixel peak fit. (Phase-normalised correlation locked onto the tile seams.)
+2. **Fine:** five 512 m patches at 1.3 m (the Base and 300 m north, south, east and west of it), each starting
+   from the coarse answer.
+3. **Quality:** normalised cross-correlation after the shift, and how well the patches agree.
+   *Good*: r ≥ 0.6 and at least 3 patches within 3 m of the median. *Fair*: r ≥ 0.3 and the patches within 10 m.
+   *Coarse*: only the 5 m step worked. *Weak* otherwise: the Base keeps the file's own coordinates and says so.
+
+At Gale, checked against the Trek mosaic whose shift we measured by hand (33.5 m S, 30.5 m E), this finds
+34.0 / 33.5 m (r = 0.92). Against the global mosaic it finds a different shift (r = 0.45, fair): the global
+mosaic itself sits about 100 m from Trek's at Gale. That is why each Base is aligned to the very photo it is
+drawn on, not to an absolute frame. At Jezero the result was *good*, 29 m. The global CTX mosaic was ruled
+out as a target: at Gale it is about 510 m off.
+
+### Square pixels away from the equator
+
+Slope, roughness, the route search and the simulator treat a pixel as a square of `pixel_m` metres. An
+equirectangular DTM is square on the ground only at its standard parallel `lat_ts`; at latitude φ an east-west pixel is
+cos φ / cos lat_ts of its nominal size. Gale's DTM (lat_ts 0, φ = −4.8°) is 0.35 % off and left as it is. The Jezero
+DTM (lat_ts 15°, φ = 18.4°) was 1.8 % off, and a lat_ts 0 DTM at 40° would be 23 % off. So `fetch` resamples any
+window more than 0.5 % off (bilinear, once) onto the same projection with lat_ts = the Base's latitude. The audit
+checks the result: at Jezero both pixel sides are 1.0097 m on the ground.
 
 ## Gait limit (optional)
 
@@ -176,6 +221,8 @@ below.
   Environmental Medicine 72(6).
 - Hassler, D. M., et al. (2014). *Mars' surface radiation environment measured with the Mars Science Laboratory's
   Curiosity rover.* Science 343(6169).
+- Guo, J., et al. (2017). *Dependence of the Martian radiation environment on atmospheric depth: Modeling and
+  measurement.* JGR Planets 122: 329–341, arXiv:1712.06987.
 - Parker, T. J., & Calef, F. J. (2016). USGS Astrogeology: *Mars MSL Gale Merged DEM 1m* (v3).
 - Caloric equivalent of oxygen: 4.825 kcal/L at RQ 0.82 (Lusk table; Weir equation).
 - Kram, R., Domingo, A., & Ferris, D. P. (1997). *Effect of reduced gravity on the preferred walk-run transition

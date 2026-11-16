@@ -15,14 +15,130 @@ export interface Stop {
   dtm_z_m?: number | null;
 }
 
+export interface TileSource {
+  url_template: string;
+  max_zoom: number;
+  /** Pixels per tile: 256 on Mars Trek, 512 on the global astro.arcgis mosaics. */
+  tile_size?: number;
+}
+
+export interface BBox {
+  lat_min: number;
+  lat_max: number;
+  lon_min: number;
+  lon_max: number;
+}
+
+export interface Alignment {
+  source: string;
+  quality: 'good' | 'fair' | 'coarse' | 'weak' | 'none';
+  east_m: number;
+  north_m: number;
+  corr?: number | null;
+  spread_m?: number | null;
+}
+
+export interface RadiationInfo {
+  gcr_mgy_per_day: number;
+  dose_eq_msv_per_day: number;
+  /** false = measured on the ground (Gale); true = estimated for this Base's elevation. */
+  estimate: boolean;
+  note: string;
+}
+
 export interface Site {
   id: string;
   name: string;
-  bbox: { lat_min: number; lat_max: number; lon_min: number; lon_max: number };
+  bbox: BBox;
   radius_m: number;
-  basemap: { url_template: string; max_zoom: number };
+  basemap: TileSource;
   /** Wider imagery drawn under the basemap (bottom first), so the map is never empty when zoomed out. */
-  context?: { name: string; url_template: string; max_zoom: number }[];
+  context?: (TileSource & { name: string })[];
+  terrain_id?: string;
+  alignment?: Alignment | null;
+  radiation?: RadiationInfo;
+  /** Plain-language caveats about this Base's data (e.g. weak alignment). */
+  warnings?: string[];
+}
+
+export type BaseStatus = 'creating' | 'ready' | 'failed' | 'interrupted';
+
+export interface BaseInfo {
+  id: string;
+  name: string;
+  kind: 'builtin' | 'user';
+  status: BaseStatus;
+  lat: number;
+  lon: number;
+  base_lat?: number;
+  base_lon?: number;
+  bbox?: BBox;
+  product_id?: string;
+  terrain_name?: string;
+  scale_m?: number | null;
+  elevation_m?: number;
+  alignment?: Alignment | null;
+  radiation?: RadiationInfo;
+  warnings?: string[];
+  size_bytes?: number;
+  created_at?: string | null;
+  error?: string | null;
+  deletable: boolean;
+}
+
+export interface BaseJobStep {
+  key: string;
+  label: string;
+  state: 'pending' | 'running' | 'done' | 'skipped' | 'warning' | 'failed';
+  detail: string;
+}
+
+export interface BaseJob {
+  base_id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  status: 'running' | 'ready' | 'failed' | 'cancelled';
+  step: string;
+  steps: BaseJobStep[];
+  fraction: number;
+  elapsed_s: number;
+  error: string | null;
+}
+
+export interface BasesPayload {
+  focused: string;
+  bases: BaseInfo[];
+  job: BaseJob | null;
+}
+
+export interface BaseLookup {
+  lat: number;
+  lon: number;
+  bbox: BBox;
+  ti_tile: string | null;
+  warnings: string[];
+  est_bytes: number;
+  free_bytes: number;
+  candidates: { product_id: string; name: string; scale_m: number; edge_m: number }[];
+}
+
+export interface NewBase {
+  lat: number;
+  lon: number;
+  name?: string;
+  product_id?: string;
+}
+
+/** HiRISE stereo terrain footprints (GeoJSON polygons, lon/lat). */
+export interface FootprintCollection {
+  type: 'FeatureCollection';
+  features: {
+    type: 'Feature';
+    id: string;
+    properties: { product_id: string; scale_m: number; supported: boolean; reason: string; name: string };
+    geometry: { type: 'Polygon'; coordinates: number[][][] };
+  }[];
 }
 
 /** EVA limits from the server config, for labels and the safe-zone slider. */

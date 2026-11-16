@@ -95,6 +95,17 @@ Controls button), because a separate controls card sat on top of pause.
 
 ![Walking the plan after finishing S1: status, minimap, distances and the live suit display](docs/img/sim-walk.png)
 
+**9. It goes wherever HiRISE has stereo terrain.** Gale is built in, but you can set a **Base** anywhere NASA has a
+1 m HiRISE stereo terrain model: 1,370 of them, about 0.1 % of Mars, drawn as cyan outlines when you press
+**New Base**. Click inside one and MarsWalk finds the right files in the HiRISE archive by itself. It downloads a
+6 × 6 km window of terrain, the matching 1 m photo and THEMIS thermal inertia. Then it lines the terrain up with the
+global photo map, measuring the offset rather than trusting the file's coordinates, and parks the rover on the
+nearest walkable ground. At Jezero's delta that took just over a minute for 134 MB, and the alignment came out *good*:
+the terrain sat 29 m from where its file said. Every saved Base is on the map. One is in focus at a time;
+click another to plan there, or delete it. Curiosity measured radiation only at Gale, so elsewhere the dose is
+scaled by how much air is overhead (thinner air at higher ground lets more through) and labelled as an estimate:
+0.230 mGy/day at Jezero, 1,900 m higher than Bradbury Landing, against Gale's measured 0.21.
+
 ## The bug that moved the map 45 metres
 
 Late on the first night we checked our own work and found the uncomfortable kind of bug: the kind that looks fine.
@@ -147,6 +158,9 @@ All real, all public:
 - **NASA DONKI** space weather: CME arrivals at Mars, particle events, flares
 - **Curiosity waypoints** for the science stops
 - **SEXTANT** walking speed and energy models (Johnson et al. 2010)
+- **HiRISE DTM index** (PDS) to find terrain for a new Base, and the global **HiRISE and CTX photo mosaics**
+  (Esri/USGS *OnMars*) to line it up
+- **RAD dose vs air pressure** (Guo et al. 2017, *JGR Planets*) to estimate radiation away from Gale
 
 Details, resolutions and the facts we verified against each file: [Data sources](docs/wiki/Data-sources.md).
 Every formula, with its source: [Models and math](docs/wiki/Models-and-math.md).
@@ -157,9 +171,18 @@ Every formula, with its source: [Models and math](docs/wiki/Models-and-math.md).
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 marswalk fetch            # one time: the terrain window around the rover (~0.6 GB)
-marswalk audit            # recompute every number (38 checks)
+marswalk audit            # recompute every number (39 checks)
 marswalk serve            # API on :8000
 cd frontend && npm install && npm run dev     # the app on http://localhost:5173
+```
+
+A new Base can also be made from the command line:
+
+```bash
+marswalk catalog lookup --lat 18.44 --lon 77.45          # which HiRISE terrain covers this point?
+marswalk base create --lat 18.44 --lon 77.45 --name "Jezero delta"
+marswalk base list
+marswalk --base b_jezero_delta_1f2b90 audit             # any command can run on a saved Base
 ```
 
 Optional: a free NASA API key in `.env` (`NASA_API_KEY=...`) raises the space-weather request limit. Stuck?
@@ -172,10 +195,11 @@ route search is a compiled A* over millions of 1 m cells. One reverse search fro
 everywhere at once. Every limit lives in `configs/`, never in code. In the app only the API layer may call the
 network, and in the backend only the repository may touch the database; lint rules and tests fail if either rule is
 broken. The simulator is Three.js, loaded only when you open it, and runs the same models in TypeScript, identical
-to the Python (a test runs the TypeScript in Node against the Python on 2,400 steps). 99 tests, plus 25 checks of
+to the Python (a test runs the TypeScript in Node against the Python on 2,400 steps). 132 tests, plus 25 checks of
 the game itself in the browser: open the app with `?qa=1`.
 
 - [How it works](docs/wiki/How-it-works.md): the pipeline, end to end
+- [Bases](docs/wiki/Bases.md): planning anywhere else HiRISE has 1 m stereo terrain
 - [Simulation](docs/wiki/Simulation.md): what the walk simulator models, what it doesn't, and how it was checked
 - [TODO](TODO.md): the roadmap for more realistic models and a faster engine (and where the easter eggs are)
 - [Decisions](docs/wiki/Decisions.md): what we chose over what, and why

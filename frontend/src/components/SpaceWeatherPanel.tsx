@@ -1,9 +1,10 @@
 import { describeError, useSpaceWeather } from '../api';
+import type { RadiationInfo } from '../api';
 
 const HEADLINE = { GO: 'Clear to go outside', CAUTION: 'Go with caution', 'NO-GO': 'Stay inside' } as const;
 
 /** Radiation go/no-go from NASA DONKI (CME arrivals predicted at Mars, particle events, flares) plus the RAD dose. */
-export function SpaceWeatherPanel({ live }: { live: boolean }) {
+export function SpaceWeatherPanel({ live, radiation }: { live: boolean; radiation?: RadiationInfo }) {
   const status = useSpaceWeather(live);
   const d = status.data;
   let headline = 'Checking the Sun…';
@@ -30,8 +31,10 @@ export function SpaceWeatherPanel({ live }: { live: boolean }) {
       {d && (
         <>
           <p className="note">
-            Radiation dose for a full {d.eva_duration_h} h walk: {d.eva_dose_mgy.toFixed(2)} mGy, from the Curiosity RAD
-            surface baseline of {d.baseline_dose_mgy_per_day} mGy per day (cosmic rays only).
+            Radiation dose for a full {d.eva_duration_h} h walk: {d.eva_dose_mgy.toFixed(2)} mGy, at{' '}
+            {radiation?.estimate
+              ? `${d.baseline_dose_mgy_per_day.toFixed(3)} mGy per day ${radiation.note} (cosmic rays only).`
+              : `the Curiosity RAD surface baseline of ${d.baseline_dose_mgy_per_day} mGy per day (cosmic rays only).`}
           </p>
           {d.mars_arrivals.map((a) => (
             <p className="note" key={a.arrival}>

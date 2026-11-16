@@ -3,6 +3,11 @@ import { OfflineError, request, requestBytes, staticJson } from './client';
 import type {
   AskAnswer,
   AskRequest,
+  BaseJob,
+  BaseLookup,
+  BasesPayload,
+  FootprintCollection,
+  NewBase,
   LayerInfo,
   LiveState,
   SimSun,
@@ -51,8 +56,10 @@ export async function getSimTerrain(step: number): Promise<SimTerrainData> {
 }
 export const getSimFine = (url: string) => requestBytes(url);
 export const getSimSun = () => request<SimSun>('/api/sim/sun');
-/** The simulator's ground texture (photo or off-limits overlay), as an image URL for three.js to load. */
-export const simTextureUrl = (kind: 'photo' | 'hazard', step: number) => `/api/sim/texture.png?kind=${kind}&step=${step}`;
+/** The simulator's ground texture (photo or off-limits overlay), as an image URL for three.js to load. The Base id is
+ * in the URL so the browser never reuses another Base's cached texture. */
+export const simTextureUrl = (kind: 'photo' | 'hazard', step: number, baseId = '') =>
+  `/api/sim/texture.png?kind=${kind}&step=${step}&b=${enc(baseId)}`;
 export const getWalkHome = (lat: number, lon: number, elapsedH: number) =>
   request<WalkHome>(`/api/walkback?lat=${lat.toFixed(7)}&lon=${lon.toFixed(7)}&elapsed_h=${elapsedH.toFixed(3)}`);
 /** The suit display following a walker's actual position, as an image URL. */
@@ -69,6 +76,18 @@ export const addStop = (stop: NewStop) => request<Stop>('/api/stops', { method: 
 export const updateStop = ({ id, ...patch }: StopPatch) =>
   request<Stop>(`/api/stops/${enc(id)}`, { method: 'PATCH', json: patch });
 export const deleteStop = (id: string) => request<{ deleted: string }>(`/api/stops/${enc(id)}`, { method: 'DELETE' });
+
+export const listBases = () => request<BasesPayload>('/api/bases');
+export const getBaseJob = () => request<BaseJob | null>('/api/bases/job');
+export const createBase = (b: NewBase) => request<BaseJob>('/api/bases', { method: 'POST', json: b });
+export const cancelBase = (id: string) =>
+  request<{ cancelled: boolean }>(`/api/bases/${enc(id)}/cancel`, { method: 'POST' });
+export const resumeBase = (id: string) => request<BaseJob>(`/api/bases/${enc(id)}/resume`, { method: 'POST' });
+export const focusBase = (id: string) => request<BasesPayload>('/api/bases/focus', { method: 'POST', json: { id } });
+export const deleteBase = (id: string) => request<BasesPayload>(`/api/bases/${enc(id)}`, { method: 'DELETE' });
+export const getFootprints = () => request<FootprintCollection>('/api/catalog/footprints');
+export const lookupBase = (lat: number, lon: number) =>
+  request<BaseLookup>(`/api/catalog/lookup?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`);
 
 export const listObservations = (stopId: string) => request<Observation[]>(`/api/stops/${enc(stopId)}/observations`);
 export const addObservation = (stopId: string, obs: NewObservation) =>

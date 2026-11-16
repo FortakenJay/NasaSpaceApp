@@ -37,13 +37,15 @@ flowchart LR
 
 | Folder | What |
 |---|---|
-| `src/marswalk/sources` | Fetching archives, the central NASA API client |
+| `src/marswalk/sources` | Fetching archives, the central NASA API client, the HiRISE DTM catalog, global photo tiles |
 | `src/marswalk/layers` | Terrain layers, registration and coverage, overlay rendering |
 | `src/marswalk/cost` | Walking speed and metabolic models |
 | `src/marswalk/route` | Compiled A*/Dijkstra, plan building, stop ordering |
-| `src/marswalk/spaceweather` | DONKI go/no-go |
+| `src/marswalk/spaceweather` | DONKI go/no-go, radiation (measured at Gale, estimated elsewhere) |
+| `src/marswalk/bases` | Saved Bases, focus, the job that makes a new one |
 | `src/marswalk/ask.py`, `eink.py`, `audit.py` | Voice answers, suit display, audit |
 | `src/marswalk/api` | FastAPI app |
 | `frontend/src` | The web app (fetch calls only in `api/`; enforced by ESLint) |
 | `firmware/suit_display` | ESP32 sketch for the e-ink panel |
 | `configs/` | Site and EVA limits: every threshold lives here, not in code |
+| `data/` | Downloads (`raw/`), caches (`cache/`), your Bases (`bases/`) and the database; none of it in git |

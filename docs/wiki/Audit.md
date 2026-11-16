@@ -6,8 +6,10 @@ come from, and can we get the same answer a different way?*
 
 `marswalk audit` is the result. It recomputes each value by an independent path: haversine distances along the drawn
 route instead of grid steps, the timeline re-added leg by leg, budgets straight from the config, the slope layer
-hand-computed at random cells. Then it compares the two answers. On the real Gale data: **38 of 38 checks pass**,
-and **one finding** stands ([full table](Audit-results.md)). Run it yourself after `marswalk fetch`:
+hand-computed at random cells. Then it compares the two answers. On the real Gale data with the merged DEM: **38 of 39 checks pass**, and **one finding** stands
+([full table](Audit-results.md)). The open check is the HiRISE-to-base-map residual: after the configured shift,
+21 m remains (it passed without the merged DEM). On a saved Base, `marswalk --base <id> audit` runs the checks that
+apply there (17 at Jezero, all passing). Run it yourself after `marswalk fetch`:
 
 ```bash
 marswalk audit --out docs/wiki/Audit-results.md

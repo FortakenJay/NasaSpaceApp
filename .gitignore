@@ -1,6 +1,8 @@
 # Downloaded and derived rasters (re-create with `marswalk fetch` / `marswalk layers`)
 data/raw/
 data/cache/
+# Bases you set yourself (`marswalk base create` or New Base in the app); Gale lives in configs/
+data/bases/
 out/
 data/marswalk.db*
 
