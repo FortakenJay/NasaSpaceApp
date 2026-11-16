@@ -16,6 +16,9 @@ marswalk serve                # API on :8000
 cd frontend && npm install && npm run dev    # app on http://localhost:5173
 ```
 
+`npm run preview` (in `frontend/`) serves the built site and proxies `/api` to the API on port 8000, the same way
+`npm run dev` does.
+
 On Windows use `.venv\Scripts\activate`. Tests: `pytest` (132) and, in `frontend/`, `npx tsc --noEmit && npx eslint src`.
 
 ## Another place on Mars
@@ -39,18 +42,23 @@ Run `marswalk serve` with one worker (the default): the Base in focus is held in
 
 The site and the API are two services in one project (`vercel.json`). The browser calls `/api` on the same host.
 The elevation files are not in the deploy: they are git-ignored, and the function cannot write the project folder
-(`/var/task`). Catalogs, terrain windows, added Bases, and the SQLite file go to `/tmp/marswalk` instead.
+(`/var/task`). Catalogs, terrain windows, added Bases, and the SQLite file go to `/tmp/marswalk` instead. The
+database file there is `marswalk.db`. The same path is used when the checkout cannot be written, even if the
+`VERCEL` variable is missing. On a laptop the file is `data/marswalk.db`.
 
-That disk is empty again when the function instance is replaced. A Base you added, and the Gale `dtm.tif` the
+That disk is empty again when the function instance is replaced. Startup then creates the tables, seeds Gale's
+stops, and loads the stored route in `configs/preview/gale_boxwork_plan.json` (S1 through S5, 1.71 km, least
+effort). The map draws that line until someone computes a new plan. A Base you added, and the Gale `dtm.tif` the
 planner fetched on the first route, can be missing on the next request. The page then says the terrain is not
 cached, or that the HiRISE catalog could not be downloaded. Planning and **New Base** start the download again.
 If the API itself fails to start, the page opens the saved Gale demo (`frontend/public/sample-site.json`) and
-planning stays off.
+planning stays off. That file has the site and the stops, and no route.
 
 The Supabase project for this repo is `https://kcgoeljumzgnkrvraldr.supabase.co`. Its publishable key is
 `SUPABASE_PUBLISHABLE_KEY` in `.env` (see `.env.example`). The API does not use it yet, so plans and stops still
-go to SQLite. Postgres would keep those rows. The GeoTIFFs still need a file bucket, or another download.
-See [Decisions](Decisions.md).
+go to SQLite. The tables and a private `marswalk` file bucket are written in
+`supabase/migrations/20261116013200_marswalk_store.sql` and have not been applied. Postgres would keep the rows.
+The GeoTIFFs still need that bucket, or another download. See [Decisions](Decisions.md).
 
 ## When something is off
 

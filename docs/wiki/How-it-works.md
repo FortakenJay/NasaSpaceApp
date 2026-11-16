@@ -47,5 +47,5 @@ flowchart LR
 | `src/marswalk/api` | FastAPI app |
 | `frontend/src` | The web app (fetch calls only in `api/`; enforced by ESLint) |
 | `firmware/suit_display` | ESP32 sketch for the e-ink panel |
-| `configs/` | Site and EVA limits: every threshold lives here, not in code |
-| `data/` | Downloads (`raw/`), caches (`cache/`), your Bases (`bases/`) and the database; none of it in git |
+| `configs/` | Site and EVA limits: every threshold lives here, not in code. `configs/preview/` holds the stored Gale route the database loads when it has no plans |
+| `data/` | Downloads (`raw/`), caches (`cache/`), your Bases (`bases/`) and `marswalk.db`; none of it in git. A hosted function uses `/tmp/marswalk` for the same files |

@@ -188,11 +188,13 @@ marswalk --base b_jezero_delta_1f2b90 audit             # any command can run on
 Optional: a free NASA API key in `.env` (`NASA_API_KEY=...`) raises the space-weather request limit. Stuck?
 [Running it](docs/wiki/Running.md) has a table of the usual errors.
 
-The hosted copy on Vercel can show the map, but it does not keep the terrain. Elevation files and a new Base's
-download live on the function's temporary disk, which is wiped when that instance goes away. Saved plans and the
-field log are a SQLite file in the same place. A Postgres database such as Supabase would keep those rows. It would
-not replace the GeoTIFFs: those still need a file store, or the function downloads them again. That split is written
-up in [Decisions](docs/wiki/Decisions.md).
+The hosted copy on Vercel can show the map. Elevation files and a new Base's download live on the function's
+temporary disk (`/tmp/marswalk`), which is wiped when that instance goes away. Saved plans and the field log are
+SQLite in that same folder (`/tmp/marswalk/marswalk.db`). A fresh database loads the stored Gale route
+(`configs/preview/gale_boxwork_plan.json`, S1–S5, 1.71 km) so the line is on the map without downloading terrain
+again. The project at `https://kcgoeljumzgnkrvraldr.supabase.co` is the intended lasting store. The API does not
+use it yet. Postgres would keep the rows. It would not replace the GeoTIFFs: those still need a file store, or
+the function downloads them again. That split is written up in [Decisions](docs/wiki/Decisions.md).
 
 ## Inside
 

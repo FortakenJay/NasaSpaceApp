@@ -7,9 +7,9 @@ Interactive docs: http://127.0.0.1:8000/docs.
 |---|---|---|
 | GET | `/api/health` | Version and where the service runs from |
 | GET | `/api/site` | Site, stops, EVA limits, map tiles |
-| POST | `/api/stops` · PATCH/DELETE `/api/stops/{id}` | Add, move, rename, remove your own stops (saved in SQLite; on Vercel that file is under `/tmp` and does not last) |
+| POST | `/api/stops` · PATCH/DELETE `/api/stops/{id}` | Add, move, rename, remove your own stops (saved in SQLite; on a hosted function that file is `/tmp/marswalk/marswalk.db` and does not last) |
 | POST | `/api/plan` | Plan a walk: route, timeline, budgets, limit checks, profile. Body: `{cost, order, stop_ids}` |
-| GET, POST | `/api/plans`, GET `/api/plans/{id}` | Saved plans |
+| GET, POST | `/api/plans`, GET `/api/plans/{id}` | Saved plans. An empty Gale database is given the stored route in `configs/preview/gale_boxwork_plan.json`. The map draws the newest saved route until a plan is computed in this session |
 | GET, POST | `/api/stops/{id}/observations` | Field notes logged at a stop |
 | GET | `/api/walkback?lat=&lon=` | Walk home from any point |
 | GET | `/api/layers`, `/api/layers/{name}.png` | Overlays: hillshade, slope5, roughness, ti, nogo, safezone (`?elapsed_h=`), radio (no line of sight to the rover), shelter (walk home longer than the solar-storm warning), uncertain (off-limits certainty over the walk area; its own bounds) |

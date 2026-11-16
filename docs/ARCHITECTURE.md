@@ -159,7 +159,7 @@ come from the site bbox, so no code changes are needed.
 | Raster I/O | **rasterio (GDAL 3.12)** + **pyproj** | Reads PDS IMG, ISIS3 cubes and JP2 natively, remotely via `/vsicurl/` windows; handles Mars CRSs and reprojection. Replaces the hand-written readers from v0.1 |
 | Analysis | numpy, scipy, scikit-image | Standard planetary raster toolkit |
 | Route search | **numba** | A* over ~11 M cells (Gale strip at 1 m) needs compiled code; Python callbacks per edge would take minutes per leg |
-| Database | **SQLite + SQLAlchemy 2** | Saved plans, stops, field notes, and which Base is in focus. A file, so a laptop needs nothing else. On Vercel that file is under `/tmp` and does not last. The Supabase project for this repo is `https://kcgoeljumzgnkrvraldr.supabase.co` (publishable key in `.env`). The API does not use it yet. Postgres would keep the rows; the GeoTIFFs in `data/raw` would still need a file store. See the wiki [Decisions](wiki/Decisions.md) |
+| Database | **SQLite + SQLAlchemy 2** | Saved plans, stops, field notes, and which Base is in focus. A laptop uses `data/marswalk.db`. A checkout that cannot be written, including Vercel, uses `/tmp/marswalk/marswalk.db`, which does not last. An empty Gale database loads `configs/preview/gale_boxwork_plan.json`. The Supabase project is `https://kcgoeljumzgnkrvraldr.supabase.co` (publishable key in `.env`). The API does not use it yet; the unapplied schema is `supabase/migrations/20261116013200_marswalk_store.sql`. See the wiki [Decisions](wiki/Decisions.md) |
 | Backend | **FastAPI** + uvicorn | The single server layer: every read/write goes through a route; typed request models; 501 + milestone for stages not built |
 | Frontend | **React 19 + TypeScript + Vite**, **TanStack Query** | One central API layer (`src/api/`) with typed endpoints and query/mutation hooks; components only consume hooks |
 | Map | **OpenLayers 10** | Supports custom projections, so the app registers a **Mars 2000 geographic projection** (correct metres per degree for the scale bar) and Mars Trek's **geographic** tile grid. Leaflet/MapLibre mostly assume Earth or Web Mercator |
@@ -180,7 +180,7 @@ configs/sites/gale_boxwork.toml + data/sites/gale_boxwork/stops.json        conf
         ▼
    api.app (FastAPI)  ──/api/*──►  frontend (React + TanStack Query + OpenLayers)   [M6: CesiumJS planning table]
         ▲
-   db.repo ── SQLAlchemy ──► data/marswalk.db (sites, stops, plans, observations)
+   db.repo ── SQLAlchemy ──► marswalk.db (sites, stops, plans, observations, settings)
 ```
 
 ## Data access layers (enforced)
@@ -195,8 +195,8 @@ React components ──hooks──► src/api/queries.ts ──► src/api/endpo
 
 1. **Components never fetch.** They import hooks, types and `describeError` from `src/api` (index.ts) only.
 2. **`src/api/client.ts` is the only `fetch`.** It turns 501 answers into `ApiError(notBuilt, milestone)` and
-   network failures or proxy gateway errors (502/504) into `OfflineError`. `getSite()` uses that to fall back to the
-   static `sample-site.json`.
+   network failures or proxy gateway errors (502/504) into `OfflineError`. `getSite()` opens the static
+   `sample-site.json` on either of those, and on any HTTP status of 500 or higher. A 404 is left as an error.
 3. **Routes are the only server entry point.** Each hook maps to exactly one route.
 4. **`marswalk.db.repo` is the only DB access.** It returns plain dicts (no ORM objects leak) and raises `NotFound` (→ 404).
 5. **Guards:** ESLint `no-restricted-globals` (fetch, XMLHttpRequest) and `no-restricted-imports` (API internals,
@@ -224,8 +224,8 @@ React components ──hooks──► src/api/queries.ts ──► src/api/endpo
 | `spaceweather/status.py` | dose estimate ✅, DONKI range split ✅; fetch + go/no-go | M5 |
 | `export/payload.py` | `site_payload(site, stops)` ✅ (stops from the DB in the API; from config for the static export) | ✅; plan/layers M2/M4 |
 | `db/models.py` | `Site`, `Stop`, `Plan`, `Observation` (SQLAlchemy 2, typed) | ✅ |
-| `db/engine.py` | Engine + session factory; `data/marswalk.db`, or in-memory for tests | ✅ |
-| `db/repo.py` | Seed from config (idempotent), stops, plans, observations; UTC-labelled timestamps | ✅ tested |
+| `db/engine.py` | Engine + session factory. `data/marswalk.db` on a writable checkout, `/tmp/marswalk/marswalk.db` otherwise, in-memory for tests | ✅ |
+| `db/repo.py` | Seed from config (idempotent), the stored Gale preview plan when that database is empty, stops, plans, observations, settings; UTC-labelled timestamps | ✅ tested |
 | `api/app.py` | FastAPI app; DB session dependency; stages not built answer 501 + milestone | ✅ |
 | `cli.py` | `info`, `serve`, `export` ✅; other stages report their milestone | ✅ |
 | `frontend/src/api/` | `client.ts` (only fetch), `endpoints.ts`, `queries.ts` (TanStack Query hooks), `types.ts`, `errors.ts`, `index.ts` | ✅ |
@@ -283,10 +283,13 @@ sync with `export/payload.py` and `db/repo.py`.
   4 MB curl chunks; one TI tile instead of 2.5 GB). Results are cached as GeoTIFFs; raw data is git-ignored.
 - **Ortho grid quirk.** HiRISE ortho JP2s carry a GeoJP2 header 1.5 px off the DTM, while their PDS labels match it.
   Products marked `same_grid_as = "dtm"` use the DTM grid.
-- **Offline fallback.** The app loads `/api/site`, or `sample-site.json` when the API is down (a network error, or
-  502/504 from a proxy), so a static build still demos. Planning, saving and the field log are disabled offline.
+- **Offline fallback.** The app loads `/api/site`, or `sample-site.json` when the API is down (a network error,
+  502/504 from a proxy, or HTTP 500 and above), so a static build still demos. Planning, saving and the field log
+  are disabled offline. The sample has the site and the stops, and no route.
 - **Config vs DB.** Products, projections and EVA limits stay in versioned TOML. Stops are seeded from the stops file
-  into the DB once (idempotent) and served from the DB. Plans and observations live only in the DB.
+  into the DB once (idempotent) and served from the DB. Plans and observations live in the DB. An empty Gale
+  database also receives the route in `configs/preview/gale_boxwork_plan.json`. The map shows that stored route
+  until a plan is computed in the current session. Changing the ticked stops does not recompute it.
 - **Space weather is a panel, not a map layer.** It is one value for the whole site; DONKI is Earth/L1-centric until MAVEN SEP is added.
 
 ## Data contracts
@@ -297,7 +300,8 @@ sync with `export/payload.py` and `db/repo.py`.
 - **Observation:** `{id, stop_id, created_at (ISO, UTC), author, note, sample_id|null}`.
 - **DB tables:** `sites(id, name)`, `stops(pk, site_id, code, seq, kind, name, lat, lon, dtm_z_m, science, work_time_min)`,
   `plans(id uuid, site_id, created_at, name, cost_model, stop_order, stop_codes JSON, status, result JSON)`,
-  `observations(id, site_id, stop_code, created_at, author, note, sample_id)`.
+  `observations(id, site_id, stop_code, created_at, author, note, sample_id)`,
+  `settings(key, value)`.
 
 ## Milestones
 | | Deliverable | Done when |
