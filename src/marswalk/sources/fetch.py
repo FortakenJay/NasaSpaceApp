@@ -33,7 +33,19 @@ DTM_PAD_PX = 100   # margin around the bbox so slope/roughness filters have neig
 
 
 def data_root() -> Path:
-    return Path(os.environ.get("MARSWALK_DATA", PROJECT_ROOT / "data"))
+    """Where rasters, the HiRISE catalog, and added Bases are stored.
+
+    MARSWALK_DATA overrides this (tests point it at a temp folder). On Vercel the
+    deployment directory is read-only, so the writable disk is /tmp. The same
+    fallback applies if the checkout itself cannot be written, even when the
+    VERCEL variable is missing.
+    """
+    override = os.environ.get("MARSWALK_DATA")
+    if override:
+        return Path(override)
+    if os.environ.get("VERCEL") or not os.access(PROJECT_ROOT, os.W_OK):
+        return Path("/tmp/marswalk")
+    return PROJECT_ROOT / "data"
 
 
 def raw_dir(site: SiteConfig) -> Path:
@@ -83,7 +95,8 @@ def read_merged_dem(site: SiteConfig, url: str | None = None, log: Callable[[str
 
 
 def fetch_site(site: SiteConfig, include_optional: bool = False, log: Callable[[str], None] = print,
-               progress: Callable[[str, float], None] | None = None, cancel=None) -> Path:
+               progress: Callable[[str, float], None] | None = None, cancel=None,
+               essentials_only: bool = False) -> Path:
     """Fetch the products for `site`. Returns the raw data directory. Raises only if the DTM fails (or on cancel).
 
     `progress(step, fraction)` reports "dtm", "ti" and "ortho" progress; `cancel` (a threading.Event) stops the
@@ -130,6 +143,12 @@ def fetch_site(site: SiteConfig, include_optional: bool = False, log: Callable[[
     full = GeoGrid.from_product(site.dtm)
     win = rs.bbox_window(full, site.bbox, pad_px=DTM_PAD_PX)
     src_grid = full.window(int(win.row_off), int(win.col_off), int(win.height), int(win.width))
+    if essentials_only:
+        # Planning only needs the elevation window. Skip the orthos and thermal inertia so a hosted
+        # function can finish inside its time limit.
+        _square_pixels(site, out, prods, manifest, src_grid, log)
+        manifest_path.write_text(json.dumps(manifest, indent=1))
+        return out
 
     # 2b. Merged DEM (optional: without it the app plans on the HiRISE strip alone)
     merged_tif = out / MERGED_FILE

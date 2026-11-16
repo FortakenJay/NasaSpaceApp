@@ -7,7 +7,7 @@ Interactive docs: http://127.0.0.1:8000/docs.
 |---|---|---|
 | GET | `/api/health` | Version and where the service runs from |
 | GET | `/api/site` | Site, stops, EVA limits, map tiles |
-| POST | `/api/stops` · PATCH/DELETE `/api/stops/{id}` | Add, move, rename, remove your own stops (saved in SQLite) |
+| POST | `/api/stops` · PATCH/DELETE `/api/stops/{id}` | Add, move, rename, remove your own stops (saved in SQLite; on Vercel that file is under `/tmp` and does not last) |
 | POST | `/api/plan` | Plan a walk: route, timeline, budgets, limit checks, profile. Body: `{cost, order, stop_ids}` |
 | GET, POST | `/api/plans`, GET `/api/plans/{id}` | Saved plans |
 | GET, POST | `/api/stops/{id}/observations` | Field notes logged at a stop |

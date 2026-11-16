@@ -81,7 +81,16 @@ def build_stack(site: SiteConfig, eva: EVAConfig, use_cache: bool = True) -> Lay
     raw = raw_dir(site)
     dtm_path = raw / "dtm.tif"
     if not dtm_path.exists():
-        raise FileNotFoundError(f"terrain not cached: {dtm_path} is missing. Run `python -m marswalk fetch` first.")
+        import os
+        from marswalk.config import PROJECT_ROOT
+        # A hosted deploy has no cached GeoTIFF (the files are git-ignored) and cannot write the
+        # project directory. Download the elevation window into the writable data directory.
+        hosted = bool(os.environ.get("VERCEL")) or not os.access(PROJECT_ROOT, os.W_OK)
+        if hosted and not os.environ.get("MARSWALK_DATA"):
+            from marswalk.sources.fetch import fetch_site
+            fetch_site(site, essentials_only=True)
+        if not dtm_path.exists():
+            raise FileNotFoundError(f"terrain not cached: {dtm_path} is missing. Run `python -m marswalk fetch` first.")
     ti_path = raw / "ti.tif"
     merged_path = raw / MERGED_FILE
     use_merged = site.merged_dem is not None and merged_path.exists()

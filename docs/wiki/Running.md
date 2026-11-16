@@ -35,13 +35,29 @@ marswalk --base b_jezero_delta_1f2b90 audit        # any command, on a saved Bas
 
 Run `marswalk serve` with one worker (the default): the Base in focus is held in that process.
 
+## Hosted on Vercel
+
+The site and the API are two services in one project (`vercel.json`). The browser calls `/api` on the same host.
+The elevation files are not in the deploy: they are git-ignored, and the function cannot write the project folder
+(`/var/task`). Catalogs, terrain windows, added Bases, and the SQLite file go to `/tmp/marswalk` instead.
+
+That disk is empty again when the function instance is replaced. A Base you added, and the Gale `dtm.tif` the
+planner fetched on the first route, can be missing on the next request. The page then says the terrain is not
+cached, or that the HiRISE catalog could not be downloaded. Planning and **New Base** start the download again.
+If the API itself fails to start, the page opens the saved Gale demo (`frontend/public/sample-site.json`) and
+planning stays off.
+
+Supabase would keep the rows (plans, stops, field notes, which Base is focused). It would not store the GeoTIFFs.
+Those still need a file bucket, or another download. See [Decisions](Decisions.md).
+
 ## When something is off
 
 | You see | Why | Fix |
 |---|---|---|
 | `zsh: command not found: marswalk` | The project's virtual environment is not active (e.g. conda `base` is) | `source .venv/bin/activate`, or run `.venv/bin/marswalk ...` |
 | 404 on http://localhost:8000/ | That is the API; the app is on port 5173 | Open http://localhost:5173 |
-| "terrain not cached" or a path to another folder | The package was installed from an older copy of the project | `pip install -e ".[dev]"` in this folder |
+| "terrain not cached" or a path to another folder | Locally, the package was installed from an older copy, or `marswalk fetch` has not been run. On Vercel, `/tmp` was wiped and the elevation file is gone | Locally: `pip install -e ".[dev]"` in this folder, then `marswalk fetch`. On Vercel: plan again and wait for the download; it does not survive a new instance |
+| `Read-only file system: '/var/task/data/...'` | A hosted function tried to write the deployment directory | Redeploy a build that stores catalogs and terrain under `/tmp/marswalk` |
 | Space weather "partly unavailable" | NASA DONKI was slow or the hourly limit was reached | Wait, add a key to `.env`, or press *Ask NASA again now* |
 | Map colour stops at slanted edges | That is the end of the HiRISE stereo strip | `marswalk fetch` adds the USGS merged DEM around it |
 | "No 1 m HiRISE stereo terrain covers this point" | The click was outside every cyan outline | Zoom in and click inside one; zoomed out, a click on a dot works too |

@@ -30,3 +30,10 @@
 - "Go to S3" / "path to U1 from here": the answer draws the way there and the walk back. On the map, Go makes that
   stop next, then the stops already ticked. In the simulator the ground line changes immediately, and Go follows it.
 - Controls live on the pause screen. The separate controls card covered pause.
+
+## 2026-11-15: Supabase MCP for this repo
+- Jih pasted the Supabase Cursor setup for project `kcgoeljumzgnkrvraldr`. The URL is that one project, so it went in `.cursor/mcp.json` here. A CLI add wrote the same server into the user profile; that copy was removed so other repos do not point at this project.
+- The `agent` CLI is not on PATH, so `agent mcp login supabase` was not run. Cursor still has to approve and sign in to that server.
+- Jih then ran `npx skills add supabase/agent-skills`. Both skills are copied into `.agents/skills/` (`supabase`, `supabase-postgres-best-practices`) and recorded in `skills-lock.json`. Postgres is not wired into the API yet.
+- `.gitignore` now skips `.agents/` and `.cursor/` so the skill copies and the MCP config stay off GitHub. `skills-lock.json` stays.
+- Supabase login on this machine is the RosaApp org. A new project there is quoted at $0/month. The project id in `.cursor/mcp.json` (`kcgoeljumzgnkrvraldr`) is not visible to that login. No project was created.

@@ -19,3 +19,7 @@ frontend/dist/
 
 # Local secrets (API keys). Never commit.
 .env
+
+# Editor and agent installs. skills-lock.json stays so the Supabase skills can be restored.
+.agents/
+.cursor/

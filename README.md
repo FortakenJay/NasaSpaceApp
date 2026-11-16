@@ -188,6 +188,12 @@ marswalk --base b_jezero_delta_1f2b90 audit             # any command can run on
 Optional: a free NASA API key in `.env` (`NASA_API_KEY=...`) raises the space-weather request limit. Stuck?
 [Running it](docs/wiki/Running.md) has a table of the usual errors.
 
+The hosted copy on Vercel can show the map, but it does not keep the terrain. Elevation files and a new Base's
+download live on the function's temporary disk, which is wiped when that instance goes away. Saved plans and the
+field log are a SQLite file in the same place. A Postgres database such as Supabase would keep those rows. It would
+not replace the GeoTIFFs: those still need a file store, or the function downloads them again. That split is written
+up in [Decisions](docs/wiki/Decisions.md).
+
 ## Inside
 
 FastAPI and SQLite on the back; React, TypeScript and OpenLayers (on a true Mars map projection) on the front. The
