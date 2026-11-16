@@ -52,6 +52,7 @@ What was chosen, what it was chosen over, and why.
 | Route colours | Cyan on the way out, orange on the way back | One cyan line, or green for the return | The walk is two trips. Green is already the rover, so a green return line disappeared into the start marker |
 | "Go to S3" | The answer draws the path from here and the walk back, and Go makes that stop next (on the map) or replaces the line under your feet (in the simulator) | A distance sentence only | An astronaut asks where something is in order to go there. The route has to change when they say so |
 | Controls in the simulator | The key list lives on the pause screen. Controls and ? pause | A second card, centred like pause | The two cards occupied the same spot and covered each other |
+| Simulator when the elevation file is missing | The Gale mesh shipped in `frontend/public/sim/gale/` | Download the GeoTIFF inside the simulator request | That download is large enough that the hosted function is cut off and the game never opens |
 
 ## Hosting and what is stored
 

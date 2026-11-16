@@ -312,6 +312,8 @@ export interface SimTerrain {
   /** Where the heights are (GET /api/sim/terrain.bin): uint16 LE cm above h0 | off-limits bits, row-major, MSB first. */
   heights: { url: string; layout: string };
   terrain_source: string;
+  /** Ground photos shipped with the site, used when this server has no elevation file. */
+  textures?: { photo: string; hazard: string };
   /** The 1 m walking grid the physics reads (GET /api/sim/fine.bin), at the planner's own resolution. */
   fine: SimFineMeta;
   physics: SimPhysics;

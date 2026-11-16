@@ -79,7 +79,7 @@ export default function SimulationView({ stops, result, live, baseId, siteName, 
   const audio = useRef<SimAudio | null>(null);
   const [help, setHelp] = useState(true);
   const [miniScale, setMiniScale] = useState(3); // metres per minimap pixel
-  const data = useSimTerrain(STEP, live);
+  const data = useSimTerrain(STEP, live, baseId);
   const fine = useSimFine(data.data?.fine.url ?? null, live);
   const sunTrack = useSimSun(live);
   const weather = useSpaceWeather(live);
@@ -134,7 +134,9 @@ export default function SimulationView({ stops, result, live, baseId, siteName, 
     const t = new Terrain(data.data);
     const walk = walkGrid.grid;
     terrainRef.current = t;
-    Promise.all([loadTexture(simTextureUrl('photo', STEP, baseId)), loadTexture(simTextureUrl('hazard', STEP, baseId)).catch(() => null), loadImage(simTextureUrl('photo', STEP, baseId))])
+    const photoUrl = data.data.textures?.photo ?? simTextureUrl('photo', STEP, baseId);
+    const hazardUrl = data.data.textures?.hazard ?? simTextureUrl('hazard', STEP, baseId);
+    Promise.all([loadTexture(photoUrl), loadTexture(hazardUrl).catch(() => null), loadImage(photoUrl)])
       .then(([photo, hazard, img]) => {
         if (cancelled || !host.current) return;
         photoImg.current = img;

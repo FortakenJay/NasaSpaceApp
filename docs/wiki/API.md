@@ -17,7 +17,7 @@ Interactive docs: http://127.0.0.1:8000/docs.
 | GET | `/api/sources` · POST `/api/sources/refresh` | State of every NASA feed; ask again now |
 | POST | `/api/ask` | A question in plain words. Body: `{question, plan_id, selected_stop_id, elapsed_h}`, plus `here_lat`, `here_lon` and `visited` for a live position |
 | GET | `/api/eink.png`, `/api/eink.bin` | The suit display at `?elapsed_h=` (latest plan unless `plan_id`). Add `lat`, `lon`, `walked_m`, `energy_kj` and `visited` (comma-separated stop ids) to draw it from a live position |
-| GET | `/api/sim/terrain?step=3` | For the [simulator](Simulation.md): local frame, physics constants, and the versioned URLs of the two grids below |
+| GET | `/api/sim/terrain?step=3` | For the [simulator](Simulation.md): local frame, physics constants, and the versioned URLs of the two grids below. **409** when the elevation file is not on the server; the Gale page then uses `frontend/public/sim/gale/` |
 | GET | `/api/sim/terrain.bin?step=3&v=` | The 3 m mesh (gzip): heights uint16 cm, then off-limits bits |
 | GET | `/api/sim/texture.png?kind=photo\|hazard` | The simulator's ground photo or off-limits overlay, on the same grid |
 | GET | `/api/sim/fine.bin?v=` | The 1 m grid (gzip): walk-surface heights, terrain heights, roughness, then sand, off-limits and radio-shadow bits |

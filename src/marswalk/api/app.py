@@ -511,6 +511,18 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
     # --- 3-D walk simulator ---------------------------------------------------------------------------
 
+    def _sim_stack():
+        """The terrain mesh, without starting a download.
+
+        A hosted function has no GeoTIFF. Downloading one inside this request is large enough
+        that the platform cuts the function off, and the simulator never opens. The page then
+        uses the Gale mesh shipped in frontend/public/sim/gale.
+        """
+        from marswalk.sources.fetch import raw_dir
+        if not (raw_dir(F().site) / "dtm.tif").is_file():
+            raise HTTPException(409, "terrain not cached for the simulator")
+        return terrain()
+
     def _sim_points(db) -> tuple[tuple[float, float], list[tuple[float, float]]]:
         site = F().site
         stops = repo.list_stops(db, site.id)
@@ -524,7 +536,7 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
         sim_cache = F().sim_cache
         from marswalk import sim
         from marswalk.layers.stack import raw_stamp
-        stack = terrain()
+        stack = _sim_stack()
         (lat0, lon0), pts = _sim_points(db)
         key = ("terrain", raw_stamp(site), step, lat0, lon0, tuple(pts))
         if key not in sim_cache:
@@ -540,7 +552,7 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
         from marswalk import sim
         from marswalk.layers.stack import raw_stamp
-        stack = terrain()
+        stack = _sim_stack()
         (lat0, lon0), pts = _sim_points(db)
         key = ("terrain.bin", raw_stamp(site), step, lat0, lon0, tuple(pts))
         if key not in sim_cache:
@@ -558,7 +570,7 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
 
         from marswalk import sim
         from marswalk.layers.stack import raw_stamp
-        stack = terrain()
+        stack = _sim_stack()
         (lat0, lon0), pts = _sim_points(db)
         key = ("fine", raw_stamp(site), lat0, lon0, tuple(pts))
         if key not in sim_cache:
@@ -590,7 +602,7 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
         sim_cache = F().sim_cache
         from marswalk import sim
         from marswalk.layers.stack import raw_stamp
-        stack = terrain()
+        stack = _sim_stack()
         (lat0, lon0), pts = _sim_points(db)
         key = ("texture", kind, raw_stamp(site), step, lat0, lon0, tuple(pts))
         if key not in sim_cache:

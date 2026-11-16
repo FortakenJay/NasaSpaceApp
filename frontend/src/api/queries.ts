@@ -64,8 +64,13 @@ export function useRefreshSources() {
 }
 
 /** The walk area as a 3-D height grid, for the simulator. Loaded once per session. */
-export function useSimTerrain(step: number, enabled: boolean) {
-  return useQuery({ queryKey: ['sim-terrain', step], queryFn: () => api.getSimTerrain(step), enabled, staleTime: Infinity });
+export function useSimTerrain(step: number, enabled: boolean, siteId = '') {
+  return useQuery({
+    queryKey: ['sim-terrain', step, siteId],
+    queryFn: () => api.getSimTerrain(step, siteId),
+    enabled,
+    staleTime: Infinity,
+  });
 }
 
 /** The 1 m walking grid (walk surface, terrain, roughness, sand, off-limits, radio shadow) for the simulator. `url`

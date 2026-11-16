@@ -78,6 +78,9 @@ The GeoTIFFs still need that bucket, or another download. See [Decisions](Decisi
 ## The simulator
 
 It needs `npm install` once after pulling (it adds Three.js) and `marswalk serve` running. If the Simulation button
-is greyed out, the app can't reach the API. If the ground shows shaded relief but no photographed detail, the
-orthophoto (`raw/ortho_1m.tif`) is missing: run `marswalk fetch` again, then restart `marswalk serve`, which caches
-the simulator's terrain until the raw data changes.
+is greyed out, the app can't reach the API. On the hosted site the function has no elevation file, so the Gale
+walk uses the mesh shipped with the page (`frontend/public/sim/gale/`: the 3 m ground, the 1 m walking grid, and
+the photo). That mesh is the same window the planner uses for H1 and S1–S5. A new plan still needs the elevation
+download. If the ground shows shaded relief but no photographed detail, the orthophoto (`raw/ortho_1m.tif`) is
+missing: run `marswalk fetch` again, then restart `marswalk serve`, which caches the simulator's terrain until
+the raw data changes.

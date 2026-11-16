@@ -1,0 +1,24 @@
+---
+description: Update the docs in the same change whenever behavior changes
+alwaysApply: true
+---
+
+# Docs move with the change
+
+A change that alters what a person sees, what an endpoint returns, where data is stored, or how to run the app is not finished until the docs that describe it say the new thing.
+
+Update only the pages that own the change:
+
+- `README.md` when a hackathon reader would notice (how to run it, what the hosted site keeps).
+- `docs/wiki/Running.md` for setup, hosting, and the error table.
+- `docs/wiki/API.md` when a route's answer or status code changes.
+- `docs/wiki/Simulation.md` for the walk simulator.
+- `docs/wiki/Decisions.md` when a choice was made (what, instead of what, why).
+- `docs/ARCHITECTURE.md` when a module, the database, or a data contract changes.
+- The other wiki page that already owns the topic (Bases, Voice questions, How it works).
+
+Leave a page alone when the change does not touch what it claims. A rename inside a function, with the same behavior, does not need a doc edit.
+
+Write the new behavior in the same voice as the page. Do not add a changelog entry that repeats it.
+
+Before you finish, name the pages you updated, or say why none needed an update.

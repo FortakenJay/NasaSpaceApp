@@ -51,9 +51,18 @@ export const refreshSources = () =>
 export const einkUrl = (planId: string, elapsedH: number) =>
   `/api/eink.png?plan_id=${enc(planId)}&elapsed_h=${elapsedH.toFixed(3)}`;
 /** The 3 m mesh: its frame and physics constants (JSON), with the heights and off-limits bits it points to (binary). */
-export async function getSimTerrain(step: number): Promise<SimTerrainData> {
-  const meta = await request<SimTerrain>(`/api/sim/terrain?step=${step}`);
-  return { ...meta, heightsBin: await requestBytes(meta.heights.url) };
+export async function getSimTerrain(step: number, siteId = ''): Promise<SimTerrainData> {
+  try {
+    const meta = await request<SimTerrain>(`/api/sim/terrain?step=${step}`);
+    return { ...meta, heightsBin: await requestBytes(meta.heights.url) };
+  } catch (e) {
+    // The hosted function has no elevation file. Downloading it there gets cut off, so Gale
+    // walks on the mesh shipped with the site (built from the same terrain as the planner).
+    const missing = e instanceof OfflineError || (e instanceof ApiError && (e.status === 409 || e.status >= 500));
+    if (!missing || siteId !== 'gale_boxwork' || step !== 3) throw e;
+    const meta = await staticJson<SimTerrain>('sim/gale/terrain.json');
+    return { ...meta, heightsBin: await requestBytes(meta.heights.url) };
+  }
 }
 export const getSimFine = (url: string) => requestBytes(url);
 export const getSimSun = () => request<SimSun>('/api/sim/sun');

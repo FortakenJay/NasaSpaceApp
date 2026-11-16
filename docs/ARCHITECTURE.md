@@ -253,7 +253,7 @@ React components ──hooks──► src/api/queries.ts ──► src/api/endpo
 | GET | `/api/layers` | `[{name, key, url, bounds:[lon_min,lat_min,lon_max,lat_max], opacity}]` | ✅ `useLayers` (`[]` until fetched) |
 | GET | `/api/layers/{name}.png` | overlay PNG (hillshade, slope5, roughness, ti, nogo, safezone`?elapsed_h=`) | ✅ |
 | GET | `/api/status` | `{level, reason, …}` | ✅ `useSpaceWeather` (M5 built in v0.5) |
-| GET | `/api/sim/terrain`, `/api/sim/terrain.bin`, `/api/sim/fine.bin`, `/api/sim/sun`, `/api/sim/texture.png` | the simulator's data (see v1.0 and v1.1 above) | ✅ |
+| GET | `/api/sim/terrain`, `/api/sim/terrain.bin`, `/api/sim/fine.bin`, `/api/sim/sun`, `/api/sim/texture.png` | the simulator's data. **409** when `dtm.tif` is missing, and the Gale page uses `frontend/public/sim/gale/` | ✅ |
 | GET | `/api/layers/{radio,shelter,uncertain}.png` | operations overlays (v1.1) | ✅ |
 | GET, POST | `/api/bases`, `/api/bases/job`, `/api/bases/{id}/cancel`, `/api/bases/{id}/resume`, `/api/bases/focus`; DELETE `/api/bases/{id}` | Bases (v1.2; see the [API wiki](wiki/API.md)) | ✅ `useBases`, `useCreateBase`, `useFocusBase`, `useDeleteBase` |
 | GET | `/api/catalog/footprints`, `/api/catalog/lookup` | HiRISE DTM footprints; what covers a point | ✅ `useFootprints`, `useBaseLookup` |

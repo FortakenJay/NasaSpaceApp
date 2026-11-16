@@ -57,6 +57,7 @@ def test_terrain_routes_answer_409_until_fetched(client):
     assert r.status_code == 409 and "marswalk fetch" in r.json()["detail"]
     r = client.post("/api/plan", json={"cost": "weighted", "order": "fixed"})
     assert r.status_code == 409 and "marswalk fetch" in r.json()["detail"]
+    assert client.get("/api/sim/terrain", params={"step": 3}).status_code == 409
 
 
 def test_plan_layers_and_walkback_on_synthetic_terrain(synthetic_site):

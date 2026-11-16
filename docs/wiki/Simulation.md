@@ -176,6 +176,10 @@ The numbers and the check are in `frontend/src/sim/skate.ts` and `tests/test_ska
   Mars24, tested against NASA's worked examples in `tests/test_sun.py`).
 - `/api/eink.png` and `/api/ask` accept the live position (`lat`, `lon`, or `here_lat`, `here_lon`), the distance
   walked, the energy used and the stops done.
+- On a machine that has run `marswalk fetch`, those routes build the mesh from `dtm.tif`. On the hosted site
+  that file is not in the deploy, and downloading it inside the request gets cut off, so `/api/sim/terrain`
+  answers **409**. The Gale page then loads the mesh shipped with the site, `frontend/public/sim/gale/`
+  (`terrain.bin`, `fine.bin`, `photo.png`, `hazard.png`), the same H1 and S1–S5 window.
 - The frontend code is in `frontend/src/sim/`: `terrain.ts` (the 3 m mesh at three levels of detail, the 1 m walking
   grid and the 1 m patch drawn around you), `physics.ts` (the speed, power and terrain models, identical to the Python),
   `astronaut.ts`, `eggs.ts`, `skate.ts`, `audio.ts`, `engine.ts` (Three.js scene and the fixed-tick mission-time loop),
