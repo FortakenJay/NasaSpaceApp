@@ -9,7 +9,18 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+def _project_root() -> Path:
+    """The checkout that holds configs/. An editable install lives in src/, so parents[2] is the
+    checkout. On Vercel the imported package is in site-packages, and the checkout is the process
+    working directory."""
+    here = Path(__file__).resolve()
+    for p in (Path.cwd(), *here.parents):
+        if (p / "configs" / "sites").is_dir():
+            return p
+    return here.parents[2]
+
+
+PROJECT_ROOT = _project_root()
 
 
 @dataclass(frozen=True)

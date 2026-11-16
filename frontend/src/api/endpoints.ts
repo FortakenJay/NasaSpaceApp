@@ -1,5 +1,5 @@
 // One typed function per server route. Components never call these directly: they use the hooks in queries.ts.
-import { OfflineError, request, requestBytes, staticJson } from './client';
+import { ApiError, OfflineError, request, requestBytes, staticJson } from './client';
 import type {
   AskAnswer,
   AskRequest,
@@ -35,8 +35,9 @@ export async function getSite(): Promise<SiteData> {
   try {
     return { ...(await request<SitePayload>('/api/site')), live: true };
   } catch (e) {
-    if (!(e instanceof OfflineError)) throw e;
-    // Backend not running: fall back to the static sample written by `marswalk export`.
+    // No API, or the hosted function failed to start: the static sample still opens the map.
+    const down = e instanceof OfflineError || (e instanceof ApiError && e.status >= 500);
+    if (!down) throw e;
     return { ...(await staticJson<SitePayload>('sample-site.json')), live: false };
   }
 }

@@ -1,6 +1,8 @@
 """Engine and session factory. Default database: data/marswalk.db (git-ignored); tests pass "sqlite://"."""
 from __future__ import annotations
 
+import os
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -9,7 +11,15 @@ from sqlalchemy.pool import StaticPool
 from marswalk.config import PROJECT_ROOT
 from marswalk.db.models import Base
 
-DEFAULT_URL = f"sqlite:///{(PROJECT_ROOT / 'data' / 'marswalk.db').as_posix()}"
+
+def default_db_url() -> str:
+    """On Vercel the deployment directory is read-only. /tmp is the writable disk."""
+    if os.environ.get("VERCEL"):
+        return "sqlite:////tmp/marswalk.db"
+    return f"sqlite:///{(PROJECT_ROOT / 'data' / 'marswalk.db').as_posix()}"
+
+
+DEFAULT_URL = default_db_url()
 
 
 def make_engine(url: str = DEFAULT_URL) -> Engine:
