@@ -94,15 +94,24 @@ function JobProgress({ job, canFocus, onCancel, onFocus }: {
   onFocus: () => void;
 }) {
   const pct = Math.round(job.fraction * 100);
+  const current = job.steps.find((s) => s.state === 'running');
+  const waited = job.elapsed_s < 60 ? `${Math.round(job.elapsed_s)} s` : `${Math.floor(job.elapsed_s / 60)} min`;
   return (
     <div className="job" aria-live="polite">
       <div className="job-head">
         <b>{job.name}</b>
-        <span>{job.status === 'running' ? `${pct}%` : job.status}</span>
+        <span>{job.status === 'running' ? `${pct}% · ${waited}` : job.status}</span>
       </div>
       <div className="bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
         <span style={{ width: `${pct}%` }} />
       </div>
+      {job.status === 'running' && current && (
+        <p className="hint">
+          {current.label}
+          {current.detail ? ` · ${current.detail}` : ''}
+          {job.elapsed_s >= 20 ? ' Still waiting on NASA. Cancel to place a different Base.' : ''}
+        </p>
+      )}
       <ol className="job-steps">
         {job.steps.map((s) => (
           <li key={s.key} className={s.state}>

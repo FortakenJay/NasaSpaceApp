@@ -132,6 +132,8 @@ def test_cancel_removes_everything(fake_world, isolated_data):
         runner.start(fake_world["lat"], fake_world["lon"], "Second")
     bid = runner.snapshot()["base_id"]
     assert runner.cancel(bid)
+    runner.start(fake_world["lat"], fake_world["lon"], "Next Base")
+    runner.cancel(runner.snapshot()["base_id"])
     runner._thread.join(10)
     assert runner.snapshot()["status"] == "cancelled"
     assert not (isolated_data / "bases" / bid).exists() and not (isolated_data / "raw" / bid).exists()

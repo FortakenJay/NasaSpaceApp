@@ -30,8 +30,10 @@ size against your free disk space, and a name to edit.
 
 A Base takes one to three minutes and 130–280 MB. The button stays off only when the download itself is larger
 than the free disk. After the files land, each GeoTIFF is stored in the database (`terrain_files`). If that copy
-on disk is later missing, planning writes it back from the row. **Cancel** removes everything it downloaded. If
-the server stops mid-download, the Base comes back as *interrupted*, with **Resume**.
+on disk is later missing, planning writes it back from the row. **Cancel** removes everything it downloaded and
+frees the slot at once, even if a NASA read is still stuck. A connection that sends nothing for 45 seconds
+fails on its own and the error is shown on that step. If the server stops mid-download, the Base comes back
+as *interrupted*, with **Resume**.
 
 ## What differs from Gale
 

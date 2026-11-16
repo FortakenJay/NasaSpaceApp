@@ -87,11 +87,16 @@ class JobRunner:
         self._state: JobState | None = None
         self._thread: threading.Thread | None = None
         self._cancel = threading.Event()
+        self._token = 0
+        self._local = threading.local()
 
-    # --- control ---------------------------------------------------------------------------------
     def running(self) -> bool:
+        st = self._state
+        if st is not None and st.status != "running":
+            return False
         return self._thread is not None and self._thread.is_alive()
 
+    # --- control ---------------------------------------------------------------------------------
     def snapshot(self) -> dict | None:
         with self._lock:
             return self._state.as_dict() if self._state else None
@@ -114,26 +119,38 @@ class JobRunner:
             else:
                 name = (name or "").strip() or "New Base"
                 base_id = new_id(name)
+            self._token += 1
+            token = self._token
             self._cancel = threading.Event()
             self._state = JobState(base_id=base_id, name=name, lat=float(lat), lon=float(lon))
             if background:
-                self._thread = threading.Thread(target=self._run, args=(product_id,), name="marswalk-base-job", daemon=True)
+                self._thread = threading.Thread(target=self._run, args=(product_id, token), name="marswalk-base-job", daemon=True)
                 self._thread.start()
         if not background:
-            self._run(product_id)
+            self._run(product_id, token)
         return self.snapshot() or {}
 
     def cancel(self, base_id: str | None = None) -> bool:
-        st = self._state
-        if st is None or not self.running() or (base_id and st.base_id != base_id):
-            return False
-        self._cancel.set()
+        """Stop the job and free the slot now. A NASA read that is still blocked cannot be killed;
+        it is ignored when it returns."""
+        with self._lock:
+            st = self._state
+            if st is None or st.status != "running" or (base_id and st.base_id != base_id):
+                return False
+            self._cancel.set()
+            self._token += 1
+            st.status, st.error = "cancelled", "cancelled"
+            for s in st.steps:
+                if s["state"] == "running":
+                    s["state"] = "failed"
         return True
 
     # --- progress --------------------------------------------------------------------------------
     def _set(self, key: str, state: str, detail: str = "", frac: float = 0.0) -> None:
         w = _weights()
         with self._lock:
+            if getattr(self._local, "token", None) != self._token:
+                return
             st = self._state
             if st is None:
                 return
@@ -149,26 +166,42 @@ class JobRunner:
         return lambda f: self._set(key, "running", frac=float(f))
 
     # --- the job ---------------------------------------------------------------------------------
-    def _run(self, product_id: str | None) -> None:
-        st = self._state
+    def _run(self, product_id: str | None, token: int) -> None:
+        self._local.token = token
+        with self._lock:
+            st = self._state
         assert st is not None
         info = {"id": st.base_id, "name": st.name, "kind": "user", "status": "creating", "lat": st.lat, "lon": st.lon,
                 "created_at": now_iso(), "warnings": [], "error": None}
         try:
             self._create(st, info, product_id)
             with self._lock:
+                if token != self._token:
+                    self._discard(st.base_id)
+                    return
                 st.status, st.fraction = "ready", 1.0
             if self.on_ready:
                 self.on_ready(st.base_id)
         except Exception as e:  # noqa: BLE001 - every failure becomes a message for the user
             from marswalk.sources.raster import Cancelled
+            with self._lock:
+                if token != self._token:
+                    retired = True
+                else:
+                    retired = False
+            if retired:
+                self._discard(st.base_id)
+                return
             if isinstance(e, Cancelled) or self._cancel.is_set():
                 self._discard(st.base_id)
                 with self._lock:
-                    st.status, st.error = "cancelled", "cancelled"
+                    if token == self._token:
+                        st.status, st.error = "cancelled", "cancelled"
                 return
             msg = str(e) if isinstance(e, JobError) else f"{type(e).__name__}: {e}"
             with self._lock:
+                if token != self._token:
+                    return
                 st.status, st.error = "failed", msg
                 for s in st.steps:
                     if s["state"] == "running":

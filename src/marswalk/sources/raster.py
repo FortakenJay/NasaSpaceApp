@@ -30,6 +30,9 @@ GDAL_ENV = {
     "VSI_CACHE": "TRUE",
     "GDAL_HTTP_MAX_RETRY": "4",                     # HiRISE server returns 503 under load
     "GDAL_HTTP_RETRY_DELAY": "5",
+    "GDAL_HTTP_CONNECTTIMEOUT": "20",              # a dead connection must not sit forever
+    "GDAL_HTTP_LOW_SPEED_LIMIT": "100",            # bytes/s
+    "GDAL_HTTP_LOW_SPEED_TIME": "45",              # no bytes for 45 s -> fail, so the Base job can end
 }
 USER_AGENT = "marswalk/0.1 (research prototype)"
 STRIP_ROWS = 512    # with a progress callback, windows are read in strips this tall (same bytes, progress between)
