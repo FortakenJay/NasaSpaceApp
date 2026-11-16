@@ -59,14 +59,17 @@ Two different things get written, and they do not belong in the same place.
 
 | What | Today | On Vercel | A database would do |
 |---|---|---|---|
-| Stops you add, saved plans, field notes, which Base is in focus | SQLite file `data/marswalk.db` | `/tmp/marswalk.db`, because `/var/task` is read-only | Supabase (Postgres) would keep these rows across restarts. The SQLAlchemy models are ordinary tables and can move |
+| Stops you add, saved plans, field notes, which Base is in focus | SQLite file `data/marswalk.db` | `/tmp/marswalk/marswalk.db`, because `/var/task` is read-only. A fresh database also loads the stored Gale route in `configs/preview/gale_boxwork_plan.json` | Supabase (Postgres) would keep these rows across restarts. The SQLAlchemy models are ordinary tables and can move |
 | HiRISE catalog, `dtm.tif`, orthophoto, thermal inertia, a new Base's `site.toml` | `data/cache` and `data/raw` | `/tmp/marswalk/...`, same reason | A database does not hold a 50–300 MB GeoTIFF. That needs object storage (Supabase Storage, or the same kind of bucket), or the function downloads the window again |
 
 Chosen for the hackathon deploy: write the temporary disk (`/tmp`) instead of failing with "read-only file system",
-and if `/api/site` is down, open the saved Gale demo so the page is not blank. Not chosen yet: moving the database
-to Supabase. It would stop plans and stops from disappearing, and it would not by itself make `dtm.tif` stay put.
-The first plan on a fresh instance still has to fetch the elevation window. A full HiRISE download can also be cut
-off by the function's time limit.
+and if `/api/site` is down, open the saved Gale demo so the page is not blank. The Supabase project for this repo
+is `https://kcgoeljumzgnkrvraldr.supabase.co`. The publishable key lives in `.env` as `SUPABASE_PUBLISHABLE_KEY`.
+The API still reads and writes SQLite. The tables and a private `marswalk` file bucket are written in
+`supabase/migrations/20261116013200_marswalk_store.sql` and have not been applied: the logged-in Supabase
+account cannot open this project. That project would stop plans and stops from disappearing, and the bucket
+is where `dtm.tif` would go. A database row still does not hold the GeoTIFF itself. The first plan on a fresh instance still has to fetch the elevation window.
+A full HiRISE download can also be cut off by the function's time limit.
 
 ## Verification
 

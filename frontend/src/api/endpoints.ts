@@ -79,7 +79,6 @@ export const updateStop = ({ id, ...patch }: StopPatch) =>
 export const deleteStop = (id: string) => request<{ deleted: string }>(`/api/stops/${enc(id)}`, { method: 'DELETE' });
 
 export const listBases = () => request<BasesPayload>('/api/bases');
-export const getBaseJob = () => request<BaseJob | null>('/api/bases/job');
 export const createBase = (b: NewBase) => request<BaseJob>('/api/bases', { method: 'POST', json: b });
 export const cancelBase = (id: string) =>
   request<{ cancelled: boolean }>(`/api/bases/${enc(id)}/cancel`, { method: 'POST' });

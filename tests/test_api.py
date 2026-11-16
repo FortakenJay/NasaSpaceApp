@@ -10,6 +10,32 @@ def client():
     return TestClient(create_app(db_url="sqlite://"))
 
 
+def test_hosted_database_is_not_in_the_checkout(monkeypatch):
+    from marswalk.db import engine
+
+    monkeypatch.delenv("MARSWALK_DATA", raising=False)
+    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.setattr(engine.os, "access", lambda *_a, **_k: False)
+    assert engine.default_db_url() == "sqlite:////tmp/marswalk/marswalk.db"
+
+
+def test_preview_plan_is_the_stored_gale_route():
+    from marswalk.config import load_site
+    from marswalk.db import repo
+    from marswalk.db.engine import make_engine, make_session_factory
+
+    site = load_site("configs/sites/gale_boxwork.toml")
+    sessions = make_session_factory(make_engine("sqlite://"))
+    with sessions() as s:
+        repo.seed_site(s, site)
+        assert repo.seed_preview_plan(s, site.id)
+        plans = repo.list_plans(s, site.id)
+        assert len(plans) == 1 and plans[0]["name"] == "Gale preview"
+        assert plans[0]["stop_ids"] == ["S1", "S2", "S3", "S4", "S5"]
+        assert plans[0]["result"]["summary"]["distance_km"] == 1.71
+        assert repo.seed_preview_plan(s, site.id) is False
+
+
 def test_health(client):
     r = client.get("/api/health")
     assert r.status_code == 200 and r.json()["ok"] is True

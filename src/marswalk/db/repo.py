@@ -6,11 +6,12 @@ The API routes call these; the frontend reaches them only through /api.
 from __future__ import annotations
 
 import datetime as dt
+import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from marswalk.config import SiteConfig
+from marswalk.config import PROJECT_ROOT, SiteConfig
 from marswalk.db.models import Observation, Plan, Setting, Site, Stop
 
 USER_KIND = "user"   # stops added on the map (the others, "start" and "stop", are seeded from the site config)
@@ -177,6 +178,23 @@ def create_plan(session: Session, site_id: str, *, cost_model: str, stop_order: 
     session.add(p)
     session.commit()
     return _plan_dict(p)
+
+
+def seed_preview_plan(session: Session, site_id: str) -> bool:
+    """Insert the stored Gale route when this database has no plans yet.
+
+    The file is a plan already computed on the Gale terrain (configs/preview). A fresh
+    /tmp database on the preview would otherwise have the stops and no line on the map.
+    """
+    if site_id != "gale_boxwork" or list_plans(session, site_id, limit=1):
+        return False
+    path = PROJECT_ROOT / "configs" / "preview" / "gale_boxwork_plan.json"
+    if not path.is_file():
+        return False
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    create_plan(session, site_id, cost_model=raw["cost_model"], stop_order=raw["stop_order"],
+                stop_ids=list(raw["stop_ids"]), name=raw.get("name") or "Gale preview", result=raw["result"])
+    return True
 
 
 def list_plans(session: Session, site_id: str, limit: int = 50) -> list[dict]:

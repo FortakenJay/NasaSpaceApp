@@ -48,11 +48,6 @@ export const SKATE: SkateParams = {
   restW: 60,
 };
 
-/** Seconds of each push cycle the foot is actually pushing. */
-export function kickContactS(): number {
-  return (KICK_END - KICK_START) * PUSH_S;
-}
-
 export function rollingCoeff(roughM: number, sand: boolean, p: SkateParams = SKATE): number {
   return Math.min(p.crrBase + p.crrPerRoughM * Math.max(roughM, 0) + (sand ? p.crrSand : 0), p.crrMax);
 }

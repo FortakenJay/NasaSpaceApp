@@ -358,10 +358,6 @@ export class SimEngine {
     this.raf = requestAnimationFrame(this.loop);
   }
 
-  onStatus(fn: (s: SimStatus) => void): void {
-    this.listeners.push(fn);
-  }
-
   setTimeScale(v: number): void {
     this.status.timeScale = v;
     this.emit(true);

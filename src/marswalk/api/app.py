@@ -135,10 +135,6 @@ class ObservationIn(BaseModel):
     sample_id: str | None = Field(default=None, max_length=64)
 
 
-def _not_built(milestone: str, err: Exception) -> JSONResponse:
-    return JSONResponse(status_code=501, content={"milestone": milestone, "detail": str(err)})
-
-
 def get_session(request: Request) -> Iterator[Session]:
     with request.app.state.sessions() as session:
         yield session
@@ -156,6 +152,10 @@ def create_app(site_path: str = DEFAULT_SITE, eva_path: str = DEFAULT_EVA, db_ur
     app.state.sessions = make_session_factory(make_engine(db_url))
     with app.state.sessions() as s:
         repo.seed_site(s, builtin)
+        # The file database (local serve, and a fresh /tmp on Vercel) gets the stored Gale route.
+        # Tests pass sqlite:// and keep an empty plans table.
+        if db_url == DEFAULT_URL:
+            repo.seed_preview_plan(s, builtin.id)
     app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
                        allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["*"])
 

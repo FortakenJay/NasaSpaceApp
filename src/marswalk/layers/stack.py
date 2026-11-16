@@ -35,11 +35,6 @@ class LayerStack:
     def shape(self) -> tuple[int, int]:
         return self.elevation_m.shape  # type: ignore[return-value]
 
-    def traversable(self, r: int, c: int) -> bool:
-        return (0 <= r < self.shape[0] and 0 <= c < self.shape[1]
-                and not self.nogo[r, c] and np.isfinite(self.elevation_m[r, c]))
-
-
 def nogo_mask(slope_1m: np.ndarray, slope_5m: np.ndarray, roughness: np.ndarray,
               elevation: np.ndarray, hazards: dict) -> np.ndarray:
     """Hard no-go: missing DEM, or any hazard limit exceeded. Implemented (pure, tested)."""

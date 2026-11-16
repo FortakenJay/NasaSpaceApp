@@ -47,8 +47,10 @@ cached, or that the HiRISE catalog could not be downloaded. Planning and **New B
 If the API itself fails to start, the page opens the saved Gale demo (`frontend/public/sample-site.json`) and
 planning stays off.
 
-Supabase would keep the rows (plans, stops, field notes, which Base is focused). It would not store the GeoTIFFs.
-Those still need a file bucket, or another download. See [Decisions](Decisions.md).
+The Supabase project for this repo is `https://kcgoeljumzgnkrvraldr.supabase.co`. Its publishable key is
+`SUPABASE_PUBLISHABLE_KEY` in `.env` (see `.env.example`). The API does not use it yet, so plans and stops still
+go to SQLite. Postgres would keep those rows. The GeoTIFFs still need a file bucket, or another download.
+See [Decisions](Decisions.md).
 
 ## When something is off
 

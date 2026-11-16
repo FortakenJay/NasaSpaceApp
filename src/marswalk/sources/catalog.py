@@ -52,13 +52,6 @@ class DtmEntry:
     version: str = ""
     orthos: dict[str, str] = field(default_factory=dict)   # "RED_C" -> url, "RED_A", "IRB_C", ...
 
-    @property
-    def center(self) -> tuple[float, float]:
-        lat = sum(c[0] for c in self.corners) / 4
-        lon0 = self.corners[0][1]
-        lon = lon0 + sum(_wrap(c[1] - lon0) for c in self.corners) / 4
-        return lat, _wrap(lon)
-
 
 def _wrap(lon: float) -> float:
     """Longitude into -180..180."""

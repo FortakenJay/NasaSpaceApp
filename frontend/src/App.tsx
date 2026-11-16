@@ -70,7 +70,12 @@ function Workspace({ data }: { data: SiteData }) {
   const stopAdding = useCallback(() => setAdding(false), []);
   const base = useBaseWorkflow(live, data.site.id, stopAdding);
 
-  const result = compute.data ?? null;
+  // A plan computed in this session wins. Otherwise show the route stored in the database,
+  // so a fresh preview has a line without downloading the terrain again.
+  const storedPlan = plans.data?.find((p) => p.result) ?? null;
+  const result = compute.data ?? (storedPlan?.result
+    ? { ...storedPlan.result, plan_id: storedPlan.result.plan_id ?? storedPlan.id }
+    : null);
   const route = result?.route ?? null;
   const toggleSelected = useCallback((id: string) => setSelectedStopId((cur) => (cur === id ? null : id)), []);
 
@@ -122,7 +127,7 @@ function Workspace({ data }: { data: SiteData }) {
   };
   // Once a route is on the map it follows every change to the stops, so the two never disagree.
   const follow = (ids: string[]) => {
-    if (result === null) return;
+    if (compute.data == null) return;
     if (ids.length > 0) plan(ids);
     else compute.reset();
   };

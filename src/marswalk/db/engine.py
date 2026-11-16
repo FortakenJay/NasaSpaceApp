@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -13,10 +14,19 @@ from marswalk.db.models import Base
 
 
 def default_db_url() -> str:
-    """On Vercel the deployment directory is read-only. /tmp is the writable disk."""
-    if os.environ.get("VERCEL"):
-        return "sqlite:////tmp/marswalk.db"
-    return f"sqlite:///{(PROJECT_ROOT / 'data' / 'marswalk.db').as_posix()}"
+    """Same writable root as the rasters (see sources.fetch.data_root).
+
+    On Vercel, and on any checkout that cannot be written, that root is /tmp/marswalk.
+    Creating data/marswalk.db under /var/task raises EROFS and the function never starts.
+    """
+    override = os.environ.get("MARSWALK_DATA")
+    if override:
+        root = Path(override)
+    elif os.environ.get("VERCEL") or not os.access(PROJECT_ROOT, os.W_OK):
+        root = Path("/tmp/marswalk")
+    else:
+        root = PROJECT_ROOT / "data"
+    return f"sqlite:///{(root / 'marswalk.db').as_posix()}"
 
 
 DEFAULT_URL = default_db_url()
@@ -28,7 +38,6 @@ def make_engine(url: str = DEFAULT_URL) -> Engine:
         engine = create_engine(url, connect_args={"check_same_thread": False}, poolclass=StaticPool)
     else:
         if url.startswith("sqlite:///"):
-            from pathlib import Path
             Path(url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
         engine = create_engine(url, connect_args={"check_same_thread": False})
 
